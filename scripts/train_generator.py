@@ -47,6 +47,7 @@ def main() -> None:
         offline=cfg.encoders.get("offline", False),
     )
     model = IndividuateNet(gen_cfg)
+    model = model.to(device)  # warm-start runs before GeneratorTrainer's .to(device)
 
     reward = IndividuationReward(
         RewardWeights(
