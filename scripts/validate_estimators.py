@@ -30,15 +30,22 @@ def make_gaussian(n: int, d: int, rho: float, seed: int = 0):
 
 
 def main() -> None:
-    n, d = 4000, 4
-    print(f"{'rho':>5} {'true_MI':>9} {'infoNCE_lb':>11} {'CLUB_ub':>9}")
+    # Moderate dim so the fixed cosine InfoNCE critic has enough signal; the
+    # closed-form continuous MI grows with d.
+    n, d = 4000, 16
+    print(f"{'rho':>5} {'true_MI':>9} {'infoNCE_lb':>11} {'CLUB_ub':>9} {'ok':>4}")
     for rho in (0.2, 0.4, 0.6, 0.8):
         x, y = make_gaussian(n, d, rho)
-        # treat rows of x as 'text', discretise y-cluster as pseudo-identities
-        ids = (np.sign(y[:, 0]) > 0).astype(int)  # coarse label just for the API
-        lb = infonce_lower_bound(x, y, np.arange(n) % 50)  # 50 pseudo-identities
+        # InfoNCE: give every sample its own identity so the estimator reduces
+        # to the standard CPC lower bound on I(X;Y) over N-1 negatives (ceiling
+        # log N). temperature=0.5 suits these *untrained* synthetic embeddings;
+        # the production default (0.07) targets trained CLIP features.
+        lb = infonce_lower_bound(x, y, np.arange(n), temperature=0.5)
+        # CLUB upper bound on the same I(X;Y) (unconditional; labels unused).
         ub = club_upper_bound(x, y, np.arange(n) % 50, conditional=False)
-        print(f"{rho:5.2f} {true_mi(rho, d):9.3f} {lb:11.3f} {ub:9.3f}")
+        truth = true_mi(rho, d)
+        ok = "ok" if lb < truth < ub else "BAD"
+        print(f"{rho:5.2f} {truth:9.3f} {lb:11.3f} {ub:9.3f} {ok:>4}")
 
     print("\nExpected: lower bound < true MI < upper bound (monotone in rho).")
 
