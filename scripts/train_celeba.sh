@@ -11,11 +11,10 @@
 #   * queue a follower job (afterany) that resumes from the last checkpoint,
 #     and exits immediately once generator.pt.done exists.
 #
-# EDIT the #SBATCH -A / -p lines to your account and partition before use.
+# EDIT the #SBATCH -p line if your account needs a different partition.
 
 #SBATCH -J inet_train
-#SBATCH -A research
-#SBATCH -p long
+#SBATCH -p u22
 #SBATCH -G 1
 #SBATCH -c 9
 #SBATCH -t 06:00:00
