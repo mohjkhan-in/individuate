@@ -66,8 +66,9 @@ source ~/miniconda3/etc/profile.d/conda.sh 2>/dev/null || true
 conda activate torch310
 set -u
 export HF_HOME="$HOME/.cache/huggingface"
+export PYTHONUNBUFFERED=1   # stream [warmup]/[step] prints live into the .out
 
 # --- train (resumable); writes $CKPT_DIR/generator.pt + .done on completion ---
-python scripts/train_generator.py --config configs/celeba.yaml --out "$CKPT_DIR"
+python -u scripts/train_generator.py --config configs/celeba.yaml --out "$CKPT_DIR"
 
 echo "[exit] job $SLURM_JOB_ID finished its slice"
