@@ -131,12 +131,27 @@ def run_real(args) -> dict:
     probe_ids = np.asarray(probe_ids)
 
     sources = ["attribute", "discriminative", "rich"]
+    gen_caps = None
+    if getattr(args, "generator_ckpt", None):
+        from individuatenet.models.generator import generate_captions, load_generator
+        ctx = np.stack([
+            encoders.encode_image([s.image_path for s in by_id[i]]).mean(axis=0)
+            for i in ids
+        ])
+        gmodel = load_generator(args.generator_ckpt, device=cfg.get("device", "cpu"))
+        gcaps = generate_captions(gmodel, ctx, device=cfg.get("device", "cpu"),
+                                  max_new_tokens=cfg.generator.get("max_new_tokens", 40))
+        gen_caps = dict(zip(ids, gcaps))
+        sources = sources + ["generated"]
+
     table: dict = {}
     for source in sources:
         captions = []
         for i in ids:
             modal = enrol_attrs[i]
-            if source == "discriminative":
+            if source == "generated":
+                cap = gen_caps[i]
+            elif source == "discriminative":
                 active = [k for k in attr_keys if modal[k] == 1]
                 active.sort(key=lambda k: freq[k])  # rarest active attrs first
                 cap = build_captions(modal, "discriminative",
@@ -198,6 +213,8 @@ def main() -> None:
     ap.add_argument("--max_probe_per_id", type=int, default=10)
     ap.add_argument("--distinctive_k", type=int, default=3)
     ap.add_argument("--ks", type=int, nargs="+", default=[1, 5, 10])
+    ap.add_argument("--generator_ckpt", type=str, default=None,
+                    help="real path: add a 'generated' source from a trained checkpoint")
     args = ap.parse_args()
 
     if args.config:

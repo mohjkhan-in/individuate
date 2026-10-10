@@ -110,11 +110,25 @@ def run_real(args) -> None:  # pragma: no cover - cluster path
         device=cfg.get("device", "cpu"),
     )
 
+    sources = ["attribute", "discriminative", "rich"]
+    gen_caption_by_id = None
+    if getattr(args, "generator_ckpt", None):
+        from individuatenet.models.generator import generate_captions, load_generator
+        uniq = list(dict.fromkeys(id_labels.tolist()))
+        ctx = np.stack([image_emb[id_labels == i].mean(axis=0) for i in uniq])
+        gmodel = load_generator(args.generator_ckpt, device=cfg.get("device", "cpu"))
+        gcaps = generate_captions(gmodel, ctx, device=cfg.get("device", "cpu"),
+                                  max_new_tokens=cfg.generator.get("max_new_tokens", 40))
+        gen_caption_by_id = dict(zip(uniq, gcaps))
+        sources = sources + ["generated"]
+
     print(f"{'source':>14} {'I(T;Y)':>8} {'I(T;A|Y)':>9} {'U':>7}")
-    for source in ["attribute", "discriminative", "rich"]:
+    for source in sources:
         captions = []
         for s in samples:
-            if source == "discriminative":
+            if source == "generated":
+                cap = gen_caption_by_id[s.identity]
+            elif source == "discriminative":
                 active = [k for k in attr_keys if int(s.attributes.get(k, 0)) == 1]
                 active.sort(key=lambda k: freq[attr_keys.index(k)])
                 cap = build_captions(s.attributes, "discriminative",
@@ -150,6 +164,8 @@ def main() -> None:
                     help="real path: keep identities with >= this many images")
     ap.add_argument("--per_id", type=int, default=10,
                     help="real path: max images sampled per identity")
+    ap.add_argument("--generator_ckpt", type=str, default=None,
+                    help="real path: add a 'generated' source from a trained checkpoint")
     args = ap.parse_args()
 
     if args.config and not args.synthetic:

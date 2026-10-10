@@ -17,6 +17,8 @@ from individuatenet.utils import load_config, set_seed
 def main() -> None:
     ap = argparse.ArgumentParser(description="Train IndividuateNet (cluster).")
     ap.add_argument("--config", type=str, required=True)
+    ap.add_argument("--out", type=str, default=None,
+                    help="checkpoint dir (use a durable $HOME path on the cluster)")
     args = ap.parse_args()
 
     cfg = load_config(args.config)
@@ -144,14 +146,23 @@ def main() -> None:
             "attr_net": attr_net,                   # frozen q(a|t) for the leak penalty
         }
 
+    import os
+
+    ckpt_dir = args.out or cfg.get("output_dir", "results/celeba")
+    os.makedirs(ckpt_dir, exist_ok=True)
+    ckpt_path = os.path.join(ckpt_dir, "generator.pt")
+
     trainer = GeneratorTrainer(
         model, reward, encode_text,
         TrainConfig(lr=cfg.generator.lr, steps=cfg.generator.steps,
                     batch_size=cfg.generator.batch_size,
-                    max_new_tokens=cfg.generator.max_new_tokens),
+                    max_new_tokens=cfg.generator.max_new_tokens,
+                    ckpt_path=ckpt_path,
+                    save_every=cfg.generator.get("save_every", 500)),
         device=device,
     )
     trainer.fit(data_iter)
+    print(f"[done] generator checkpoint at {ckpt_path}")
 
 
 if __name__ == "__main__":

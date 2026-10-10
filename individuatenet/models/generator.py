@@ -124,3 +124,56 @@ class IndividuateNet(nn.Module):
     @property
     def trainable_parameters(self):
         return (p for p in self.parameters() if p.requires_grad)
+
+
+# -- checkpoint + inference helpers -------------------------------------------
+def save_generator(model: "IndividuateNet", path: str) -> None:
+    """Atomically save the trainable context encoder + its GeneratorConfig."""
+    import dataclasses
+    import os
+
+    tmp = str(path) + ".tmp"
+    torch.save(
+        {"context": model.context.state_dict(), "gen_cfg": dataclasses.asdict(model.cfg)},
+        tmp,
+    )
+    os.replace(tmp, path)
+
+
+def load_generator(path: str, device: str = "cpu") -> "IndividuateNet":
+    """Rebuild an IndividuateNet and load the trained context encoder weights.
+
+    Reads only ``context`` + ``gen_cfg`` so it also accepts the richer training
+    checkpoint (which additionally carries optimiser/step state).
+    """
+    ckpt = torch.load(path, map_location=device)
+    cfg = GeneratorConfig(**ckpt["gen_cfg"])
+    model = IndividuateNet(cfg).to(device)
+    model.context.load_state_dict(ckpt["context"])
+    model.eval()
+    return model
+
+
+@torch.no_grad()
+def generate_captions(
+    model: "IndividuateNet",
+    context,
+    device: str = "cpu",
+    max_new_tokens: int | None = None,
+    batch_size: int = 64,
+    greedy: bool = True,
+) -> list:
+    """Generate one caption per context row (deployment / eval helper)."""
+    import numpy as np
+
+    model.eval()
+    ctx = torch.as_tensor(np.asarray(context, dtype="float32"), device=device)
+    caps: list = []
+    for i in range(0, ctx.shape[0], batch_size):
+        tok = model.generate(ctx[i:i + batch_size], max_new_tokens, greedy=greedy)
+        caps.extend(model.decode(tok))
+    out = []
+    for c in caps:
+        c = " ".join(c.split()).strip()
+        out.append(c if c else "a person")
+    return out
