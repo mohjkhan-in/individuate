@@ -61,14 +61,28 @@ def run_real(args) -> None:  # pragma: no cover - cluster path
         offline=cfg.encoders.get("offline", False),
     )
 
-    # subsample images (grouping-free): stream then shuffle-truncate
-    pool = []
+    # Identity-GROUPED sampling. U needs several images per identity: the torch
+    # I(T;Y) anchors each caption to its identity's MEAN image embedding and
+    # matches per-row, so singleton identities collapse the bound into image-
+    # level retrieval (inflated, caption-insensitive) and the conditional leak
+    # term has no within-identity variation to condition on. Bucket by
+    # identity, keep those with >= min_imgs, take up to per_id images each.
+    by_id: dict = {}
     for s in ds:
-        pool.append(s)
-        if len(pool) >= args.max_samples * 4:
+        by_id.setdefault(s.identity, []).append(s)
+    ids = [i for i, lst in by_id.items() if len(lst) >= args.min_imgs]
+    ids = [ids[k] for k in rng.permutation(len(ids))]
+    samples: list = []
+    for i in ids:
+        imgs = by_id[i]
+        order = rng.permutation(len(imgs))
+        samples.extend(imgs[k] for k in order[: args.per_id])
+        if len(samples) >= args.max_samples:
             break
-    rng.shuffle(pool)
-    samples = pool[: args.max_samples]
+    samples = samples[: args.max_samples]
+    n_ids = len({s.identity for s in samples})
+    print(f"[info] {len(samples)} images over {n_ids} identities "
+          f"(>= {args.min_imgs} imgs/id, <= {args.per_id} sampled/id)")
 
     attr_keys: list = []
     for s in samples:
@@ -132,6 +146,10 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--max_samples", type=int, default=2000,
                     help="real path: number of images to estimate U over")
+    ap.add_argument("--min_imgs", type=int, default=4,
+                    help="real path: keep identities with >= this many images")
+    ap.add_argument("--per_id", type=int, default=10,
+                    help="real path: max images sampled per identity")
     args = ap.parse_args()
 
     if args.config and not args.synthetic:
