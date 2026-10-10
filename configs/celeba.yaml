@@ -11,7 +11,7 @@ data:
   test_frac: 0.5
 
 encoders:
-  backbone: ViT-B-32
+  backbone: ViT-B-32-quickgelu
   pretrained: openai
   # false => load real open_clip weights (needs them cached for offline gnodes).
   # Falls back to a hashing encoder only if open_clip/torch import fails.

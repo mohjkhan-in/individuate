@@ -30,7 +30,7 @@ def _hash_vector(text: str, dim: int) -> np.ndarray:
 class FrozenEncoders:
     def __init__(
         self,
-        backbone: str = "ViT-B-32",
+        backbone: str = "ViT-B-32-quickgelu",
         pretrained: str = "openai",
         device: str = "cpu",
         dim: int = 512,

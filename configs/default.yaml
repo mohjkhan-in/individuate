@@ -13,7 +13,7 @@ data:
   test_frac: 0.5        # fraction of images used as probes (rest = context)
 
 encoders:
-  backbone: ViT-B-32    # open_clip model name for real runs
+  backbone: ViT-B-32-quickgelu  # open_clip model name for real runs (quickgelu matches openai weights)
   pretrained: openai
   offline: false        # or set env INET_OFFLINE=1
 

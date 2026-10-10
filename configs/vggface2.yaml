@@ -10,9 +10,9 @@ data:
   test_frac: 0.5
 
 encoders:
-  backbone: ViT-B-32
+  backbone: ViT-B-32-quickgelu
   pretrained: openai
-  offline: true
+  offline: false
 
 u:
   backend: torch
