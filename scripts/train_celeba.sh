@@ -58,9 +58,13 @@ if [ -n "${SLURM_JOB_ID:-}" ]; then
 fi
 
 cd "$REPO"
+# conda's activate/deactivate scripts reference unset vars (e.g. CONDA_BACKUP_CXX),
+# which are fatal under `set -u`; relax it just around activation.
+set +u
 # shellcheck disable=SC1090
 source ~/miniconda3/etc/profile.d/conda.sh 2>/dev/null || true
 conda activate torch310
+set -u
 export HF_HOME="$HOME/.cache/huggingface"
 
 # --- train (resumable); writes $CKPT_DIR/generator.pt + .done on completion ---
