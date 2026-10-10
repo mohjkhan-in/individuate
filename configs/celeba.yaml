@@ -29,8 +29,9 @@ generator:
   base_lm: gpt2
   prefix_tokens: 16
   context_dim: 512
-  lambda_attr: 0.3        # std-balanced vs the identity term (see check_reward_scale)
-  beta_fluency: 0.1
+  lambda_attr: 0.5        # secondary: keep leakage down; identity term dominates
+  beta_fluency: 0.5       # per-token KL-to-base anchor (keeps captions fluent)
+  attr_bce_cap: 1.0       # bound the leakage penalty -> blocks OOD reward-hacking
   lr: 1.0e-4
   steps: 8000
   batch_size: 32

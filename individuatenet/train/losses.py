@@ -22,6 +22,7 @@ class RewardWeights:
     lambda_attr: float = 1.0
     beta_fluency: float = 0.1
     temperature: float = 0.07
+    attr_bce_cap: float = 1.0  # upper bound on the per-attr leakage penalty
 
 
 class IndividuationReward:
@@ -44,7 +45,11 @@ class IndividuationReward:
         """
         bce = torch.nn.functional.binary_cross_entropy_with_logits(
             attr_pred, attr_true, reduction="none"
-        ).sum(dim=-1)
+        ).mean(dim=-1)
+        # Bound the penalty: at chance q(a|t) gives ~log 2 nats/attr, so capping
+        # near that stops the policy from "winning" reward by emitting
+        # out-of-distribution text that merely breaks q(a|t) (reward hacking).
+        bce = bce.clamp(max=self.w.attr_bce_cap)
         # low BCE (attributes predictable) => high leakage => negative reward
         return -bce
 

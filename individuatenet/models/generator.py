@@ -96,7 +96,8 @@ class IndividuateNet(nn.Module):
     # -- sampling generation --------------------------------------------------
     @torch.no_grad()
     def generate(self, c: torch.Tensor, max_new_tokens: int | None = None,
-                 temperature: float = 1.0, greedy: bool = False):
+                 temperature: float = 1.0, greedy: bool = False,
+                 no_repeat_ngram_size: int = 0):
         max_new_tokens = max_new_tokens or self.cfg.max_new_tokens
         prefix = self._prefix(c)
         b = prefix.shape[0]
@@ -109,6 +110,8 @@ class IndividuateNet(nn.Module):
         for _ in range(max_new_tokens):
             out = self.lm(inputs_embeds=inputs_embeds)
             logits = out.logits[:, -1, :] / max(temperature, 1e-5)
+            if no_repeat_ngram_size > 0 and generated.shape[1] >= no_repeat_ngram_size:
+                self._apply_no_repeat(logits, generated, no_repeat_ngram_size)
             if greedy:
                 nxt = logits.argmax(dim=-1, keepdim=True)
             else:
@@ -117,6 +120,17 @@ class IndividuateNet(nn.Module):
             generated = torch.cat([generated, nxt], dim=1)
             inputs_embeds = torch.cat([prefix, self._embed_tokens(generated)], dim=1)
         return generated
+
+    @staticmethod
+    def _apply_no_repeat(logits: torch.Tensor, generated: torch.Tensor, n: int) -> None:
+        """Mask tokens that would complete an already-seen n-gram (in place)."""
+        for i in range(generated.shape[0]):
+            seq = generated[i].tolist()
+            cur = tuple(seq[-(n - 1):]) if n > 1 else ()
+            for start in range(len(seq) - n + 1):
+                ngram = tuple(seq[start:start + n])
+                if ngram[:-1] == cur:
+                    logits[i, ngram[-1]] = float("-inf")
 
     def decode(self, token_ids: torch.Tensor):
         return self.tokenizer.batch_decode(token_ids, skip_special_tokens=True)
@@ -170,7 +184,8 @@ def generate_captions(
     ctx = torch.as_tensor(np.asarray(context, dtype="float32"), device=device)
     caps: list = []
     for i in range(0, ctx.shape[0], batch_size):
-        tok = model.generate(ctx[i:i + batch_size], max_new_tokens, greedy=greedy)
+        tok = model.generate(ctx[i:i + batch_size], max_new_tokens, greedy=greedy,
+                             no_repeat_ngram_size=3)
         caps.extend(model.decode(tok))
     out = []
     for c in caps:

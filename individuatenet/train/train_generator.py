@@ -91,16 +91,22 @@ class GeneratorTrainer:
         with torch.no_grad():
             base_logprob = self._seq_logprob(token_ids, prefix=None)  # frozen-LM ref
 
+        # per-token logprobs for the fluency/KL term (scale-stable vs length)
+        seq_len = max(int(token_ids.shape[1]) - 1, 1)
         reward, comps = self.reward(
-            text_emb, id_anchor, attr_pred, attr_true, base_logprob, policy_logprob.detach()
+            text_emb, id_anchor, attr_pred, attr_true,
+            base_logprob / seq_len, (policy_logprob / seq_len).detach(),
         )
 
-        # REINFORCE with moving-average baseline
+        # REINFORCE with moving-average baseline + per-batch advantage
+        # standardisation (keeps the policy-gradient scale stable; without it the
+        # unbounded reward made the loss explode into the hundreds).
         self._baseline = (
             self.cfg.baseline_momentum * self._baseline
             + (1 - self.cfg.baseline_momentum) * reward.mean().item()
         )
         advantage = (reward - self._baseline).detach()
+        advantage = advantage / (advantage.std() + 1e-6)
         loss = -(advantage * policy_logprob).mean()
 
         self.opt.zero_grad()

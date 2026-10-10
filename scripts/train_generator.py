@@ -54,6 +54,7 @@ def main() -> None:
             lambda_attr=cfg.generator.lambda_attr,
             beta_fluency=cfg.generator.beta_fluency,
             temperature=cfg.u.temperature,
+            attr_bce_cap=cfg.generator.get("attr_bce_cap", 1.0),
         )
     )
 
