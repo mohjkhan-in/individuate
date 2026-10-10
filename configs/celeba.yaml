@@ -13,7 +13,10 @@ data:
 encoders:
   backbone: ViT-B-32
   pretrained: openai
-  offline: true
+  # false => load real open_clip weights (needs them cached for offline gnodes).
+  # Falls back to a hashing encoder only if open_clip/torch import fails.
+  # Do NOT set INET_OFFLINE=1 for real runs or you force the hashing fallback.
+  offline: false
 
 u:
   backend: torch
