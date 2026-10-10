@@ -1,0 +1,22 @@
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+
+# outputs / artifacts
+results/
+runs/
+checkpoints/
+*.pt
+*.pth
+*.npz
+*.log
+
+# local data & backbone mirrors
+data_local/
+backbones/

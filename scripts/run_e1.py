@@ -1,0 +1,219 @@
+"""E1: zero-shot enrolment main table.
+
+For each caption source (attribute / discriminative / rich / generated) we
+enrol every unseen identity from a single caption embedding and match held-out
+probe images against that text gallery. Reports EER / AUC / Rank-1 (mean +/- std
+over seeds) and writes a markdown + JSON table.
+
+Offline (`--synthetic`, default): numpy only, no encoders, no data. The caption
+sources map to synthetic individuation levels, so you should see EER fall and
+AUC rise from `attribute` to `generated` -- the shape of Table 1.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+import _bootstrap  # noqa: F401
+
+import numpy as np
+
+from individuatenet.data.synthetic import SOURCE_INDIVIDUATION, make_regime, split_context_probe
+from individuatenet.eval import zero_shot_enrolment
+from individuatenet.utils import set_seed
+
+
+def _agg(values):
+    arr = np.asarray(values, dtype=np.float64)
+    return float(arr.mean()), float(arr.std())
+
+
+def run_synthetic(args) -> dict:
+    sources = list(SOURCE_INDIVIDUATION.keys())
+    results = {s: {"EER": [], "AUC": [], "Rank-1": []} for s in sources}
+
+    for seed in range(args.seeds):
+        set_seed(seed)
+        reg = make_regime(
+            n_ids=args.n_ids, imgs_per_id=args.imgs_per_id,
+            dim=args.dim, attr_dim=args.attr_dim, seed=seed,
+        )
+        _, probe_idx = split_context_probe(reg, test_frac=args.test_frac, seed=seed)
+        probe_emb = reg.image_emb[probe_idx]
+        probe_ids = reg.id_labels[probe_idx]
+
+        for source in sources:
+            p = SOURCE_INDIVIDUATION[source]
+            enrol_text = reg.caption_embeddings(p, per_image=False)  # (num_ids, D)
+            res = zero_shot_enrolment(
+                enrol_text, reg.ids, probe_emb, probe_ids, ks=(1, 5, 10), seed=seed
+            )
+            results[source]["EER"].append(res.eer)
+            results[source]["AUC"].append(res.auc)
+            results[source]["Rank-1"].append(res.rank_k[1])
+
+    table = {}
+    for source in sources:
+        table[source] = {
+            metric: _agg(vals) for metric, vals in results[source].items()
+        }
+    return table
+
+
+def _modal_attr(imgs, keys):
+    """Majority-vote attribute vector for one identity (dict form)."""
+    out = {}
+    for k in keys:
+        vals = [int(s.attributes.get(k, 0)) for s in imgs]
+        out[k] = 1 if sum(vals) * 2 >= len(vals) else 0
+    return out
+
+
+def run_real(args) -> dict:
+    """E1 on real data: text-only enrolment vs image probes, per caption source.
+
+    Uses the frozen encoders (open_clip on the cluster; deterministic hashing
+    fallback offline). The learned ``generated`` source needs a trained
+    IndividuateNet checkpoint and is added once training (items 5-6) is done.
+    """
+    from individuatenet.utils import load_config
+    from individuatenet.data.real import load_dataset
+    from individuatenet.data.captions import build_captions, _ATTR_PHRASES
+    from individuatenet.models.encoders import FrozenEncoders
+
+    cfg = load_config(args.config)
+    seed = cfg.get("seed", 0)
+    set_seed(seed)
+    rng = np.random.default_rng(seed)
+
+    ds = load_dataset(cfg)
+    encoders = FrozenEncoders(
+        backbone=cfg.encoders.backbone,
+        pretrained=cfg.encoders.pretrained,
+        device=cfg.get("device", "cpu"),
+        offline=cfg.encoders.get("offline", False),
+    )
+
+    # group by identity; keep image-abundant identities, take an open-set subset
+    by_id: dict = {}
+    for s in ds:
+        by_id.setdefault(s.identity, []).append(s)
+    ids = [i for i, v in by_id.items() if len(v) >= args.min_imgs]
+    rng.shuffle(ids)
+    if args.max_ids:
+        ids = ids[: args.max_ids]
+
+    # resolve the attribute vocabulary actually present on this dataset
+    attr_keys: list = []
+    for i in ids:
+        cand = [k for k in _ATTR_PHRASES if k in by_id[i][0].attributes]
+        if cand:
+            attr_keys = cand
+            break
+    if not attr_keys:
+        attr_keys = ["Male"]
+
+    # per-identity modal attributes + attribute frequency (for discriminative)
+    enrol_attrs = {i: _modal_attr(by_id[i], attr_keys) for i in ids}
+    freq = {k: float(np.mean([enrol_attrs[i][k] for i in ids])) for k in attr_keys}
+
+    # probe images: held-out crops of the unseen identities
+    probe_paths, probe_ids = [], []
+    for i in ids:
+        imgs = list(by_id[i])
+        rng.shuffle(imgs)
+        for s in imgs[: args.max_probe_per_id]:
+            probe_paths.append(s.image_path)
+            probe_ids.append(i)
+    probe_emb = encoders.encode_image(probe_paths)
+    probe_ids = np.asarray(probe_ids)
+
+    sources = ["attribute", "discriminative", "rich"]
+    table: dict = {}
+    for source in sources:
+        captions = []
+        for i in ids:
+            modal = enrol_attrs[i]
+            if source == "discriminative":
+                active = [k for k in attr_keys if modal[k] == 1]
+                active.sort(key=lambda k: freq[k])  # rarest active attrs first
+                cap = build_captions(modal, "discriminative",
+                                     distinctive_keys=active[: args.distinctive_k])
+            else:
+                cap = build_captions(modal, source)
+            captions.append(cap)
+        gallery = encoders.encode_text(captions)  # (num_ids, D) text gallery
+        res = zero_shot_enrolment(
+            gallery, ids, probe_emb, probe_ids, ks=tuple(args.ks), seed=seed
+        )
+        table[source] = {
+            "EER": (res.eer, 0.0),
+            "AUC": (res.auc, 0.0),
+            "Rank-1": (res.rank_k[1], 0.0),
+        }
+        print(f"{source:>14}  EER={100*res.eer:6.2f}  AUC={res.auc:.3f}  "
+              f"Rank-1={100*res.rank_k[1]:6.2f}  "
+              f"(probes={res.n_probes}, gallery={res.n_gallery})")
+    if encoders.offline:
+        print("\n[warning] encoders ran OFFLINE (hashing fallback): numbers are "
+              "pipeline-only, not meaningful. Set encoders.offline=false with "
+              "open_clip available on the cluster for real metrics.")
+    return table
+
+
+def _print_markdown(table: dict) -> str:
+    lines = ["| Caption source | EER (%) | AUC | Rank-1 (%) |",
+             "|---|---|---|---|"]
+    for source, metrics in table.items():
+        eer_m, eer_s = metrics["EER"]
+        auc_m, auc_s = metrics["AUC"]
+        r1_m, r1_s = metrics["Rank-1"]
+        lines.append(
+            f"| {source} | {100*eer_m:.2f} +/- {100*eer_s:.2f} | "
+            f"{auc_m:.3f} +/- {auc_s:.3f} | {100*r1_m:.2f} +/- {100*r1_s:.2f} |"
+        )
+    md = "\n".join(lines)
+    print(md)
+    return md
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="E1 zero-shot enrolment main table.")
+    ap.add_argument("--synthetic", action="store_true", default=True)
+    ap.add_argument("--config", type=str, default=None)
+    ap.add_argument("--seeds", type=int, default=3)
+    ap.add_argument("--n_ids", type=int, default=200)
+    ap.add_argument("--imgs_per_id", type=int, default=20)
+    ap.add_argument("--dim", type=int, default=128)
+    ap.add_argument("--attr_dim", type=int, default=16)
+    ap.add_argument("--test_frac", type=float, default=0.5)
+    ap.add_argument("--out", type=str, default="results/e1_synthetic.json")
+    # real (--config) knobs
+    ap.add_argument("--min_imgs", type=int, default=4,
+                    help="keep identities with at least this many images")
+    ap.add_argument("--max_ids", type=int, default=0,
+                    help="cap number of unseen identities (0 = all)")
+    ap.add_argument("--max_probe_per_id", type=int, default=10)
+    ap.add_argument("--distinctive_k", type=int, default=3)
+    ap.add_argument("--ks", type=int, nargs="+", default=[1, 5, 10])
+    args = ap.parse_args()
+
+    if args.config:
+        print(f"\nE1 -- zero-shot enrolment (real: {args.config})\n")
+        table = run_real(args)
+        args.out = args.out.replace("synthetic", "real")
+    else:
+        table = run_synthetic(args)
+        print("\nE1 -- zero-shot enrolment (synthetic regime)\n")
+    _print_markdown(table)
+
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(table, indent=2), encoding="utf-8")
+    print(f"\nsaved -> {out}")
+
+
+if __name__ == "__main__":
+    main()

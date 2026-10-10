@@ -1,0 +1,46 @@
+# Default configuration for IndividuateNet experiments.
+seed: 0
+device: cpu            # set to cuda on the cluster
+
+data:
+  name: synthetic       # synthetic | celeba | vggface2 | lfw
+  root: data_local      # where real datasets live (ignored for synthetic)
+  n_ids: 200
+  imgs_per_id: 20
+  dim: 128              # embedding dim for the synthetic regime
+  attr_dim: 16
+  noise: 1.5           # relative to signal norm (graded individuation curve)
+  test_frac: 0.5        # fraction of images used as probes (rest = context)
+
+encoders:
+  backbone: ViT-B-32    # open_clip model name for real runs
+  pretrained: openai
+  offline: false        # or set env INET_OFFLINE=1
+
+# U(T) = I(T;Y) - I(T;A|Y)
+u:
+  backend: numpy        # numpy (offline proxy) | torch (parametric, cluster)
+  temperature: 0.07
+  ridge_lambda: 1.0e-2
+  critic_steps: 2000    # torch backend only
+  critic_lr: 1.0e-3
+
+# IndividuateNet generator q_phi(T | c)
+generator:
+  base_lm: gpt2
+  prefix_tokens: 16
+  context_dim: 512
+  lambda_attr: 1.0      # weight on I(T;A) penalty
+  beta_fluency: 0.1     # weight on KL-to-base (fluency)
+  lr: 1.0e-4
+  steps: 5000
+  batch_size: 32
+  max_new_tokens: 40
+
+eval:
+  seeds: [0, 1, 2]
+  caption_sources: [attribute, discriminative, rich, generated]
+  rank_k: [1, 5, 10]
+  bootstrap: 1000
+
+output_dir: results

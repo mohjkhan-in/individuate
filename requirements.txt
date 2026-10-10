@@ -1,0 +1,10 @@
+# Core (numpy-only offline path: synthetic E1/E2, metrics, U proxy)
+numpy>=1.24
+scipy>=1.10
+pyyaml>=6.0
+
+# Real runs (cluster): estimators, generator, encoders
+# torch>=2.0
+# open_clip_torch>=2.24
+# transformers>=4.40
+# tqdm>=4.65
