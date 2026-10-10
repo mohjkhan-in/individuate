@@ -64,7 +64,10 @@ class IndividuationReward:
         i_ty = self.identity_term(text_emb, id_anchor)
         i_ta = self.attribute_term(text_emb, attr_pred, attr_true)
         flu = self.fluency_term(base_logprob, policy_logprob)
-        reward = i_ty - self.w.lambda_attr * (-i_ta) + self.w.beta_fluency * flu
+        # attribute_term (= -BCE) INCREASES with I(T;A): low BCE means the
+        # attributes are predictable from the caption => high leakage => larger
+        # i_ta. Subtract it so the generator is pushed to *reduce* leakage.
+        reward = i_ty - self.w.lambda_attr * i_ta + self.w.beta_fluency * flu
         components = {
             "i_ty": i_ty.mean().item(),
             "i_ta": (-i_ta).mean().item(),

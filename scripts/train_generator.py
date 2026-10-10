@@ -152,6 +152,34 @@ def main() -> None:
     os.makedirs(ckpt_dir, exist_ok=True)
     ckpt_path = os.path.join(ckpt_dir, "generator.pt")
 
+    # ---- supervised warm-start -------------------------------------------
+    # A random prefix makes GPT-2 emit generic, repetitive text; REINFORCE from
+    # that cold start rarely converges. Prefix-tune (LM loss) to reproduce the
+    # baseline captions first, giving RL a fluent, on-topic initialisation.
+    # Skipped when resuming (a checkpoint already exists).
+    warmup = cfg.generator.get("warmup_steps", 300)
+    if warmup and not os.path.exists(ckpt_path):
+        tok = model.tokenizer
+        enc = tok(baseline_caps, return_tensors="pt", padding=True,
+                  truncation=True, max_length=cfg.generator.max_new_tokens)
+        w_ids = enc["input_ids"].to(device)
+        w_attn = enc["attention_mask"].to(device)
+        w_ctx = torch.as_tensor(context_mat, dtype=torch.float32, device=device)
+        w_opt = torch.optim.Adam(model.context.parameters(), lr=cfg.generator.lr)
+        model.train()
+        n_w = w_ids.shape[0]
+        for it in range(warmup):
+            sel = torch.as_tensor(
+                rng.integers(0, n_w, size=min(batch_size, n_w)), device=device
+            )
+            out = model(w_ctx[sel], w_ids[sel], attention_mask=w_attn[sel])
+            w_opt.zero_grad()
+            out.loss.backward()
+            w_opt.step()
+            if it % 50 == 0:
+                print(f"[warmup {it:4d}] lm_loss={float(out.loss):.3f}")
+        model.eval()
+
     trainer = GeneratorTrainer(
         model, reward, encode_text,
         TrainConfig(lr=cfg.generator.lr, steps=cfg.generator.steps,

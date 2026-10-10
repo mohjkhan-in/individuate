@@ -29,12 +29,14 @@ generator:
   base_lm: gpt2
   prefix_tokens: 16
   context_dim: 512
-  lambda_attr: 1.0
+  lambda_attr: 0.3        # std-balanced vs the identity term (see check_reward_scale)
   beta_fluency: 0.1
   lr: 1.0e-4
   steps: 8000
   batch_size: 32
   max_new_tokens: 40
+  warmup_steps: 300       # supervised prefix-tuning before REINFORCE (fluent init)
+  save_every: 500
 
 eval:
   seeds: [0, 1, 2]
