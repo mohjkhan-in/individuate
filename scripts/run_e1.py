@@ -115,27 +115,32 @@ def run_real(args) -> dict:
     if not attr_keys:
         attr_keys = ["Male"]
 
-    # per-identity modal attributes + attribute frequency (for discriminative)
-    enrol_attrs = {i: _modal_attr(by_id[i], attr_keys) for i in ids}
-    freq = {k: float(np.mean([enrol_attrs[i][k] for i in ids])) for k in attr_keys}
-
-    # probe images: held-out crops of the unseen identities
+    # disjoint context / probe split per identity: probe images are held out and
+    # never used to build the generator context or the enrolment caption, so AUC
+    # measures grounding to *unseen* images of the identity, not memorisation.
+    ctx_imgs: dict = {}
     probe_paths, probe_ids = [], []
     for i in ids:
         imgs = list(by_id[i])
         rng.shuffle(imgs)
-        for s in imgs[: args.max_probe_per_id]:
+        n_probe = min(args.max_probe_per_id, max(1, len(imgs) // 2))
+        ctx_imgs[i] = imgs[n_probe:] or imgs  # fallback for tiny identities
+        for s in imgs[:n_probe]:
             probe_paths.append(s.image_path)
             probe_ids.append(i)
     probe_emb = encoders.encode_image(probe_paths)
     probe_ids = np.asarray(probe_ids)
+
+    # per-identity modal attributes (context images only) + attribute frequency
+    enrol_attrs = {i: _modal_attr(ctx_imgs[i], attr_keys) for i in ids}
+    freq = {k: float(np.mean([enrol_attrs[i][k] for i in ids])) for k in attr_keys}
 
     sources = ["attribute", "discriminative", "rich"]
     gen_caps = None
     if getattr(args, "generator_ckpt", None):
         from individuatenet.models.generator import generate_captions, load_generator
         ctx = np.stack([
-            encoders.encode_image([s.image_path for s in by_id[i]]).mean(axis=0)
+            encoders.encode_image([s.image_path for s in ctx_imgs[i]]).mean(axis=0)
             for i in ids
         ])
         gmodel = load_generator(args.generator_ckpt, device=cfg.get("device", "cpu"))
