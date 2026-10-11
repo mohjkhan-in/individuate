@@ -28,7 +28,7 @@ CKPT_DIR="$HOME/inet_ckpt/celeba"        # durable checkpoints (NFS home, has qu
 # Override with:  SRC_CELEBA=/path/to/celeba sbatch $0
 SRC_CELEBA="${SRC_CELEBA:-}"
 if [ -z "$SRC_CELEBA" ]; then
-  for cand in "$HOME/dataset/celeba" "$HOME/dataset" "$HOME/datasets/celeba"; do
+  for cand in "$HOME/dataset/celeb" "$HOME/dataset/celeba" "$HOME/dataset" "$HOME/datasets/celeba"; do
     if [ -e "$cand/list_attr_celeba.txt" ]; then SRC_CELEBA="$cand"; break; fi
   done
 fi
