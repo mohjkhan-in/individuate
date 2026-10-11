@@ -23,6 +23,7 @@ class RewardWeights:
     beta_fluency: float = 0.1
     temperature: float = 0.07
     attr_bce_cap: float = 1.0  # upper bound on the per-attr leakage penalty
+    propnoun_weight: float = 0.0  # grounding penalty on named-entity/digit tokens (0 = off)
 
 
 class IndividuationReward:
@@ -57,6 +58,17 @@ class IndividuationReward:
         """KL-to-base surrogate: penalise drifting from the base LM."""
         return -(policy_logprob - base_logprob)
 
+    def grounding_term(self, propnoun_counts: torch.Tensor) -> torch.Tensor:
+        """Per-sample grounding penalty (proxy for confabulated named entities).
+
+        `propnoun_counts` is the number of mid-sentence capitalised / digit-
+        bearing tokens in the caption (invented names, places, ages, dates).
+        These let the policy reward-hack by emitting a unique fictional persona
+        per identity -- fluent but not a facial description. Returned negative so
+        it lowers reward; defaults to no-op when propnoun_weight == 0.
+        """
+        return -propnoun_counts
+
     def __call__(
         self,
         text_emb: torch.Tensor,
@@ -65,6 +77,7 @@ class IndividuationReward:
         attr_true: torch.Tensor,
         base_logprob: torch.Tensor,
         policy_logprob: torch.Tensor,
+        propnoun_counts: torch.Tensor | None = None,
     ):
         i_ty = self.identity_term(text_emb, id_anchor)
         i_ta = self.attribute_term(text_emb, attr_pred, attr_true)
@@ -73,10 +86,15 @@ class IndividuationReward:
         # attributes are predictable from the caption => high leakage => larger
         # i_ta. Subtract it so the generator is pushed to *reduce* leakage.
         reward = i_ty - self.w.lambda_attr * i_ta + self.w.beta_fluency * flu
+        ground = torch.zeros_like(i_ty)
+        if self.w.propnoun_weight and propnoun_counts is not None:
+            ground = self.grounding_term(propnoun_counts.to(i_ty))
+            reward = reward + self.w.propnoun_weight * ground
         components = {
             "i_ty": i_ty.mean().item(),
             "i_ta": (-i_ta).mean().item(),
             "fluency": flu.mean().item(),
+            "propnoun": (-ground).mean().item(),
             "reward": reward.mean().item(),
         }
         return reward, components

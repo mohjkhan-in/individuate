@@ -10,12 +10,41 @@ This module is cluster-only (imports torch and the generator). See
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Callable, Dict
 
 import torch
 
 from .losses import IndividuationReward, RewardWeights
+
+_WORD_RE = re.compile(r"[A-Za-z']+|[0-9]+")
+
+
+def count_propnoun_tokens(captions: list[str]) -> list[float]:
+    """Per-caption count of mid-sentence capitalised + digit-bearing words.
+
+    A cheap, tokenizer-free proxy for confabulated named entities (invented
+    names/places/ages/dates). A word is counted if it contains a digit, or if it
+    is capitalised and not the first word of a sentence (so a leading ``A`` or a
+    word after ``.``/``!``/``?`` is not penalised).
+    """
+    counts = []
+    for cap in captions:
+        words = cap.split()
+        n = 0.0
+        for i, w in enumerate(words):
+            core = w.strip(".,!?;:\"'()")
+            if not core:
+                continue
+            if any(ch.isdigit() for ch in core):
+                n += 1.0
+                continue
+            sentence_start = i == 0 or words[i - 1][-1:] in ".!?"
+            if core[:1].isupper() and not sentence_start:
+                n += 1.0
+        counts.append(n)
+    return counts
 
 
 @dataclass
@@ -93,9 +122,13 @@ class GeneratorTrainer:
 
         # per-token logprobs for the fluency/KL term (scale-stable vs length)
         seq_len = max(int(token_ids.shape[1]) - 1, 1)
+        propnoun_counts = torch.as_tensor(
+            count_propnoun_tokens(captions), dtype=torch.float32, device=self.device
+        )
         reward, comps = self.reward(
             text_emb, id_anchor, attr_pred, attr_true,
             base_logprob / seq_len, (policy_logprob / seq_len).detach(),
+            propnoun_counts=propnoun_counts,
         )
 
         # REINFORCE with moving-average baseline + per-batch advantage

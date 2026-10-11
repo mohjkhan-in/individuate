@@ -55,6 +55,7 @@ def main() -> None:
             beta_fluency=cfg.generator.beta_fluency,
             temperature=cfg.u.temperature,
             attr_bce_cap=cfg.generator.get("attr_bce_cap", 1.0),
+            propnoun_weight=cfg.generator.get("propnoun_weight", 0.0),
         )
     )
 
