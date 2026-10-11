@@ -3,10 +3,9 @@
 #
 #   sbatch scripts/train_celeba.sh
 #
-# Why chained + resumable: a gnode allocation has a hard ~6h wall-time and
-# ssd_scratch is node-local + wiped at job end, so the ONLY durable filesystem
-# reachable inside the job is NFS $HOME. We therefore:
-#   * stage CelebA to node-local ssd_scratch for fast IO,
+# Why chained + resumable: a gnode allocation has a hard ~6h wall-time, so the
+# ONLY durable filesystem reachable inside the job is NFS $HOME. We therefore:
+#   * read CelebA DIRECTLY from the durable copy under $HOME (no ssd_scratch copy),
 #   * checkpoint atomically to $HOME every save_every steps,
 #   * queue a follower job (afterany) that resumes from the last checkpoint,
 #     and exits immediately once generator.pt.done exists.
@@ -24,8 +23,15 @@ set -euo pipefail
 
 REPO="$HOME/Individuate"                 # durable repo clone
 CKPT_DIR="$HOME/inet_ckpt/celeba"        # durable checkpoints (NFS home, has quota)
-SRC_CELEBA="${SRC_CELEBA:-$HOME/datasets/celeba}"  # durable source copy (override via env)
-SCRATCH="/ssd_scratch/$USER/celeba"      # node-local staging (fast, ephemeral)
+
+# CelebA is read DIRECTLY from the durable copy under $HOME (no ssd_scratch copy).
+# Override with:  SRC_CELEBA=/path/to/celeba sbatch $0
+SRC_CELEBA="${SRC_CELEBA:-}"
+if [ -z "$SRC_CELEBA" ]; then
+  for cand in "$HOME/dataset/celeba" "$HOME/dataset" "$HOME/datasets/celeba"; do
+    if [ -e "$cand/list_attr_celeba.txt" ]; then SRC_CELEBA="$cand"; break; fi
+  done
+fi
 
 mkdir -p "$CKPT_DIR"
 
@@ -35,21 +41,18 @@ if [ -f "$CKPT_DIR/generator.pt.done" ]; then
   exit 0
 fi
 
-# --- stage dataset to node-local ssd_scratch (BEFORE queueing any follower,
-#     so a missing-data / startup failure exits cleanly instead of crash-looping) ---
-if [ ! -d "$SRC_CELEBA" ] || [ ! -e "$SRC_CELEBA/list_attr_celeba.txt" ]; then
-  echo "[fatal] CelebA not found at SRC_CELEBA=$SRC_CELEBA" >&2
-  echo "        Persist it once (from a node that has it) with:" >&2
-  echo "          rsync -a /ssd_scratch/$USER/celeba/ $SRC_CELEBA/" >&2
-  echo "        or submit with:  SRC_CELEBA=/path/to/celeba sbatch $0" >&2
+# --- validate dataset BEFORE queueing any follower, so a missing-data / startup
+#     failure exits cleanly instead of crash-looping ---
+if [ -z "$SRC_CELEBA" ] || [ ! -e "$SRC_CELEBA/list_attr_celeba.txt" ]; then
+  echo "[fatal] CelebA (list_attr_celeba.txt) not found under \$HOME/dataset[s]" >&2
+  echo "        Submit with:  SRC_CELEBA=/path/to/celeba sbatch $0" >&2
   exit 1
 fi
-mkdir -p "$SCRATCH"
-if [ ! -f "$SCRATCH/list_attr_celeba.txt" ]; then
-  echo "[stage] copying CelebA $SRC_CELEBA -> $SCRATCH"
-  rsync -a "$SRC_CELEBA/" "$SCRATCH/"
-fi
-ln -sfn "$SCRATCH" "$REPO/data_local/celeba"
+
+# Point the repo at the dataset directly on NFS home (no node-local copy).
+echo "[data] using CelebA directly from $SRC_CELEBA"
+mkdir -p "$REPO/data_local"
+ln -sfn "$SRC_CELEBA" "$REPO/data_local/celeba"
 
 # Staging succeeded -> queue the follower NOW so it resumes if THIS job is killed
 # at wall-time. It re-checks the DONE marker at the top and exits early if done.
