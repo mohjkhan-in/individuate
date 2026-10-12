@@ -24,6 +24,7 @@ class RewardWeights:
     temperature: float = 0.07
     attr_bce_cap: float = 1.0  # upper bound on the per-attr leakage penalty
     propnoun_weight: float = 0.0  # grounding penalty on named-entity/digit tokens (0 = off)
+    ground_weight: float = 0.0  # positive CLIP grounding reward cos(text, own image) (0 = off)
 
 
 class IndividuationReward:
@@ -69,6 +70,22 @@ class IndividuationReward:
         """
         return -propnoun_counts
 
+    def visual_grounding_term(
+        self, text_emb: torch.Tensor, id_anchor: torch.Tensor
+    ) -> torch.Tensor:
+        """Per-sample ABSOLUTE visual grounding reward (proxy for descriptiveness).
+
+        Cosine between the caption embedding and the identity's own mean image
+        embedding, both in the frozen CLIP space. Unlike `identity_term` (a
+        *relative* InfoNCE softmax that a unique-but-ungrounded persona can win),
+        this rewards captions that literally match the face's visual content, so
+        it pulls generation toward describable attributes rather than cheap
+        discriminative filler. No-op when ground_weight == 0.
+        """
+        t = torch.nn.functional.normalize(text_emb, dim=-1)
+        y = torch.nn.functional.normalize(id_anchor, dim=-1)
+        return (t * y).sum(dim=-1)  # cos(text, own image)
+
     def __call__(
         self,
         text_emb: torch.Tensor,
@@ -90,11 +107,16 @@ class IndividuationReward:
         if self.w.propnoun_weight and propnoun_counts is not None:
             ground = self.grounding_term(propnoun_counts.to(i_ty))
             reward = reward + self.w.propnoun_weight * ground
+        vground = torch.zeros_like(i_ty)
+        if self.w.ground_weight:
+            vground = self.visual_grounding_term(text_emb, id_anchor)
+            reward = reward + self.w.ground_weight * vground
         components = {
             "i_ty": i_ty.mean().item(),
             "i_ta": (-i_ta).mean().item(),
             "fluency": flu.mean().item(),
             "propnoun": (-ground).mean().item(),
+            "ground": vground.mean().item(),
             "reward": reward.mean().item(),
         }
         return reward, components

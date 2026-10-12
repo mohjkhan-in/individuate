@@ -33,6 +33,7 @@ generator:
   lambda_attr: 1.0      # weight on I(T;A) penalty
   beta_fluency: 0.1     # weight on KL-to-base (fluency)
   propnoun_weight: 0.0  # grounding penalty on named-entity/digit tokens (0 = off)
+  ground_weight: 0.0    # positive CLIP grounding reward cos(text, own face) (0 = off)
   lr: 1.0e-4
   steps: 5000
   batch_size: 32

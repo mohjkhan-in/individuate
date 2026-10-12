@@ -33,6 +33,7 @@ generator:
   beta_fluency: 0.5       # per-token KL-to-base anchor (keeps captions fluent)
   attr_bce_cap: 1.0       # bound the leakage penalty -> blocks OOD reward-hacking
   propnoun_weight: 0.3    # penalise confabulated names/places/ages/dates (0 = off)
+  ground_weight: 0.5      # reward cos(caption, own face) -> pull toward description (0 = off)
   lr: 1.0e-4
   steps: 8000
   batch_size: 32
