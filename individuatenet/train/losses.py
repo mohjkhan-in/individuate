@@ -26,6 +26,7 @@ class RewardWeights:
     propnoun_weight: float = 0.0  # grounding penalty on named-entity/digit tokens (0 = off)
     ground_weight: float = 0.0  # positive CLIP grounding reward cos(text, own image) (0 = off)
     rep_weight: float = 0.0  # penalty on degenerate repetition / looping (0 = off)
+    offtopic_weight: float = 0.0  # penalty on off-topic persona / explicit words (0 = off)
 
 
 class IndividuationReward:
@@ -98,6 +99,15 @@ class IndividuationReward:
         """
         return -rep_fracs
 
+    def offtopic_term(self, offtopic_counts: torch.Tensor) -> torch.Tensor:
+        """Per-sample penalty on off-topic persona / explicit words (0 = on-face).
+
+        Counts biographical-filler and explicit tokens the grounding reward can
+        hack toward ("actress", "musician", or CLIP's explicit-text subspace);
+        returned negative so they lower reward. No-op when offtopic_weight == 0.
+        """
+        return -offtopic_counts
+
     def __call__(
         self,
         text_emb: torch.Tensor,
@@ -108,6 +118,7 @@ class IndividuationReward:
         policy_logprob: torch.Tensor,
         propnoun_counts: torch.Tensor | None = None,
         rep_fracs: torch.Tensor | None = None,
+        offtopic_counts: torch.Tensor | None = None,
     ):
         i_ty = self.identity_term(text_emb, id_anchor)
         i_ta = self.attribute_term(text_emb, attr_pred, attr_true)
@@ -128,6 +139,10 @@ class IndividuationReward:
         if self.w.rep_weight and rep_fracs is not None:
             rep = self.repetition_term(rep_fracs.to(i_ty))
             reward = reward + self.w.rep_weight * rep
+        offtopic = torch.zeros_like(i_ty)
+        if self.w.offtopic_weight and offtopic_counts is not None:
+            offtopic = self.offtopic_term(offtopic_counts.to(i_ty))
+            reward = reward + self.w.offtopic_weight * offtopic
         components = {
             "i_ty": i_ty.mean().item(),
             "i_ta": (-i_ta).mean().item(),
@@ -135,6 +150,7 @@ class IndividuationReward:
             "propnoun": (-ground).mean().item(),
             "ground": vground.mean().item(),
             "rep": (-rep).mean().item(),
+            "offtopic": (-offtopic).mean().item(),
             "reward": reward.mean().item(),
         }
         return reward, components

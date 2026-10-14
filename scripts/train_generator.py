@@ -58,6 +58,7 @@ def main() -> None:
             propnoun_weight=cfg.generator.get("propnoun_weight", 0.0),
             ground_weight=cfg.generator.get("ground_weight", 0.0),
             rep_weight=cfg.generator.get("rep_weight", 0.0),
+            offtopic_weight=cfg.generator.get("offtopic_weight", 0.0),
         )
     )
 

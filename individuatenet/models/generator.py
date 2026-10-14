@@ -97,7 +97,8 @@ class IndividuateNet(nn.Module):
     @torch.no_grad()
     def generate(self, c: torch.Tensor, max_new_tokens: int | None = None,
                  temperature: float = 1.0, greedy: bool = False,
-                 no_repeat_ngram_size: int = 0, repetition_penalty: float = 1.0):
+                 no_repeat_ngram_size: int = 0, repetition_penalty: float = 1.0,
+                 bad_token_ids=None):
         max_new_tokens = max_new_tokens or self.cfg.max_new_tokens
         prefix = self._prefix(c)
         b = prefix.shape[0]
@@ -114,6 +115,8 @@ class IndividuateNet(nn.Module):
                 self._apply_no_repeat(logits, generated, no_repeat_ngram_size)
             if repetition_penalty and repetition_penalty != 1.0:
                 self._apply_repetition_penalty(logits, generated, repetition_penalty)
+            if bad_token_ids:
+                logits[:, bad_token_ids] = float("-inf")
             if greedy:
                 nxt = logits.argmax(dim=-1, keepdim=True)
             else:
@@ -186,6 +189,25 @@ def load_generator(path: str, device: str = "cpu") -> "IndividuateNet":
     return model
 
 
+_NSFW_WORDS = (
+    "sexy", "nipples", "tits", "boobs", "breasts", "cock", "dick", "pussy",
+    "naked", "nude", "porn", "horny", "cum", "erotic", "orgasm", "bombshell",
+    "babe",
+)
+
+
+def _nsfw_bad_token_ids(tokenizer) -> list:
+    """Single-token ids for explicit words (+ space/case variants) to hard-block."""
+    ids = set()
+    for w in _NSFW_WORDS:
+        for v in (w, " " + w, w.capitalize(), " " + w.capitalize(),
+                  w.upper(), " " + w.upper()):
+            toks = tokenizer.encode(v)
+            if len(toks) == 1:
+                ids.add(int(toks[0]))
+    return sorted(ids)
+
+
 @torch.no_grad()
 def generate_captions(
     model: "IndividuateNet",
@@ -199,11 +221,13 @@ def generate_captions(
     import numpy as np
 
     model.eval()
+    bad_ids = _nsfw_bad_token_ids(model.tokenizer)
     ctx = torch.as_tensor(np.asarray(context, dtype="float32"), device=device)
     caps: list = []
     for i in range(0, ctx.shape[0], batch_size):
         tok = model.generate(ctx[i:i + batch_size], max_new_tokens, greedy=greedy,
-                             no_repeat_ngram_size=3, repetition_penalty=1.3)
+                             no_repeat_ngram_size=3, repetition_penalty=1.3,
+                             bad_token_ids=bad_ids)
         caps.extend(model.decode(tok))
     out = []
     for c in caps:

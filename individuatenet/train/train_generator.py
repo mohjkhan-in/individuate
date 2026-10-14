@@ -69,6 +69,35 @@ def count_repetition(captions: list[str]) -> list[float]:
     return fracs
 
 
+# Off-topic / unsafe lexicon: biographical persona filler + explicit terms the
+# CLIP grounding reward can hack toward. Penalised so captions stay on the face.
+_OFFTOPIC_WORDS = frozenset({
+    "actor", "actress", "singer", "musician", "career", "industry", "star",
+    "famous", "popular", "celebrity", "pioneer", "legend", "icon", "married",
+    "divorced", "husband", "wife", "hobbies", "sports", "movies", "humor",
+    "humour", "personality",
+    "sexy", "nipples", "tits", "boobs", "breasts", "cock", "dick", "pussy",
+    "naked", "nude", "porn", "horny", "cum", "bombshell", "babe", "erotic",
+    "orgasm",
+})
+
+
+def count_offtopic_tokens(captions: list[str]) -> list[float]:
+    """Per-caption count of off-topic persona / explicit words (0 = on-face).
+
+    The CLIP grounding reward can raise cosine similarity by drifting into
+    biographical persona filler ("actress", "musician") or CLIP's explicit-text
+    subspace. This tokenizer-free lexical count penalises both so the generator
+    is pushed back toward describable facial content. No-op when
+    offtopic_weight == 0.
+    """
+    counts = []
+    for cap in captions:
+        words = [w.strip(".,!?;:'()").lower() for w in cap.split()]
+        counts.append(float(sum(1 for w in words if w in _OFFTOPIC_WORDS)))
+    return counts
+
+
 @dataclass
 class TrainConfig:
     lr: float = 1e-4
@@ -150,11 +179,15 @@ class GeneratorTrainer:
         rep_fracs = torch.as_tensor(
             count_repetition(captions), dtype=torch.float32, device=self.device
         )
+        offtopic_counts = torch.as_tensor(
+            count_offtopic_tokens(captions), dtype=torch.float32, device=self.device
+        )
         reward, comps = self.reward(
             text_emb, id_anchor, attr_pred, attr_true,
             base_logprob / seq_len, (policy_logprob / seq_len).detach(),
             propnoun_counts=propnoun_counts,
             rep_fracs=rep_fracs,
+            offtopic_counts=offtopic_counts,
         )
 
         # REINFORCE with moving-average baseline + per-batch advantage
