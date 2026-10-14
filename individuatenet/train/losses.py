@@ -25,6 +25,7 @@ class RewardWeights:
     attr_bce_cap: float = 1.0  # upper bound on the per-attr leakage penalty
     propnoun_weight: float = 0.0  # grounding penalty on named-entity/digit tokens (0 = off)
     ground_weight: float = 0.0  # positive CLIP grounding reward cos(text, own image) (0 = off)
+    rep_weight: float = 0.0  # penalty on degenerate repetition / looping (0 = off)
 
 
 class IndividuationReward:
@@ -86,6 +87,17 @@ class IndividuationReward:
         y = torch.nn.functional.normalize(id_anchor, dim=-1)
         return (t * y).sum(dim=-1)  # cos(text, own image)
 
+    def repetition_term(self, rep_fracs: torch.Tensor) -> torch.Tensor:
+        """Per-sample penalty on degenerate repetition/looping (0 = clean text).
+
+        ``rep_fracs`` in [0, 1] is the fraction of repeated unigrams/bigrams in
+        the caption. Greedy decoding of the prefix-tuned LM loops ("beautiful
+        ... beautiful ...", "passionate and passionate"), which inflates the
+        InfoNCE/grounding terms with filler; returned negative so looping lowers
+        reward. No-op when rep_weight == 0.
+        """
+        return -rep_fracs
+
     def __call__(
         self,
         text_emb: torch.Tensor,
@@ -95,6 +107,7 @@ class IndividuationReward:
         base_logprob: torch.Tensor,
         policy_logprob: torch.Tensor,
         propnoun_counts: torch.Tensor | None = None,
+        rep_fracs: torch.Tensor | None = None,
     ):
         i_ty = self.identity_term(text_emb, id_anchor)
         i_ta = self.attribute_term(text_emb, attr_pred, attr_true)
@@ -111,12 +124,17 @@ class IndividuationReward:
         if self.w.ground_weight:
             vground = self.visual_grounding_term(text_emb, id_anchor)
             reward = reward + self.w.ground_weight * vground
+        rep = torch.zeros_like(i_ty)
+        if self.w.rep_weight and rep_fracs is not None:
+            rep = self.repetition_term(rep_fracs.to(i_ty))
+            reward = reward + self.w.rep_weight * rep
         components = {
             "i_ty": i_ty.mean().item(),
             "i_ta": (-i_ta).mean().item(),
             "fluency": flu.mean().item(),
             "propnoun": (-ground).mean().item(),
             "ground": vground.mean().item(),
+            "rep": (-rep).mean().item(),
             "reward": reward.mean().item(),
         }
         return reward, components

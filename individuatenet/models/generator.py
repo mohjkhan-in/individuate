@@ -97,7 +97,7 @@ class IndividuateNet(nn.Module):
     @torch.no_grad()
     def generate(self, c: torch.Tensor, max_new_tokens: int | None = None,
                  temperature: float = 1.0, greedy: bool = False,
-                 no_repeat_ngram_size: int = 0):
+                 no_repeat_ngram_size: int = 0, repetition_penalty: float = 1.0):
         max_new_tokens = max_new_tokens or self.cfg.max_new_tokens
         prefix = self._prefix(c)
         b = prefix.shape[0]
@@ -112,6 +112,8 @@ class IndividuateNet(nn.Module):
             logits = out.logits[:, -1, :] / max(temperature, 1e-5)
             if no_repeat_ngram_size > 0 and generated.shape[1] >= no_repeat_ngram_size:
                 self._apply_no_repeat(logits, generated, no_repeat_ngram_size)
+            if repetition_penalty and repetition_penalty != 1.0:
+                self._apply_repetition_penalty(logits, generated, repetition_penalty)
             if greedy:
                 nxt = logits.argmax(dim=-1, keepdim=True)
             else:
@@ -131,6 +133,22 @@ class IndividuateNet(nn.Module):
                 ngram = tuple(seq[start:start + n])
                 if ngram[:-1] == cur:
                     logits[i, ngram[-1]] = float("-inf")
+
+    @staticmethod
+    def _apply_repetition_penalty(logits: torch.Tensor, generated: torch.Tensor,
+                                  penalty: float) -> None:
+        """CTRL-style repetition penalty on already-generated tokens (in place).
+
+        Down-weights tokens the sequence has already emitted so greedy decoding
+        stops looping ("beautiful ... beautiful ..."). penalty > 1 discourages
+        repeats; 1.0 is a no-op.
+        """
+        for i in range(generated.shape[0]):
+            for tok in set(generated[i].tolist()):
+                if logits[i, tok] > 0:
+                    logits[i, tok] /= penalty
+                else:
+                    logits[i, tok] *= penalty
 
     def decode(self, token_ids: torch.Tensor):
         return self.tokenizer.batch_decode(token_ids, skip_special_tokens=True)
@@ -185,7 +203,7 @@ def generate_captions(
     caps: list = []
     for i in range(0, ctx.shape[0], batch_size):
         tok = model.generate(ctx[i:i + batch_size], max_new_tokens, greedy=greedy,
-                             no_repeat_ngram_size=3)
+                             no_repeat_ngram_size=3, repetition_penalty=1.3)
         caps.extend(model.decode(tok))
     out = []
     for c in caps:

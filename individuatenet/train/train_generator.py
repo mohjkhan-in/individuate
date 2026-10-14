@@ -47,6 +47,28 @@ def count_propnoun_tokens(captions: list[str]) -> list[float]:
     return counts
 
 
+def count_repetition(captions: list[str]) -> list[float]:
+    """Per-caption degeneracy score in [0, 1] (unigram + bigram repetition).
+
+    Greedy decoding of the prefix-tuned LM tends to loop ("beautiful ...
+    beautiful ... beautiful", "passionate and passionate"). This tokenizer-free
+    proxy averages the fraction of repeated unigrams and repeated bigrams so the
+    reward can penalise looping without constraining the decoder itself.
+    """
+    fracs = []
+    for cap in captions:
+        words = [w.lower() for w in cap.split()]
+        n = len(words)
+        if n < 2:
+            fracs.append(0.0)
+            continue
+        uni_rep = 1.0 - len(set(words)) / n
+        bigrams = [(words[i], words[i + 1]) for i in range(n - 1)]
+        bi_rep = 1.0 - len(set(bigrams)) / len(bigrams)
+        fracs.append(0.5 * uni_rep + 0.5 * bi_rep)
+    return fracs
+
+
 @dataclass
 class TrainConfig:
     lr: float = 1e-4
@@ -125,10 +147,14 @@ class GeneratorTrainer:
         propnoun_counts = torch.as_tensor(
             count_propnoun_tokens(captions), dtype=torch.float32, device=self.device
         )
+        rep_fracs = torch.as_tensor(
+            count_repetition(captions), dtype=torch.float32, device=self.device
+        )
         reward, comps = self.reward(
             text_emb, id_anchor, attr_pred, attr_true,
             base_logprob / seq_len, (policy_logprob / seq_len).detach(),
             propnoun_counts=propnoun_counts,
+            rep_fracs=rep_fracs,
         )
 
         # REINFORCE with moving-average baseline + per-batch advantage

@@ -57,6 +57,7 @@ def main() -> None:
             attr_bce_cap=cfg.generator.get("attr_bce_cap", 1.0),
             propnoun_weight=cfg.generator.get("propnoun_weight", 0.0),
             ground_weight=cfg.generator.get("ground_weight", 0.0),
+            rep_weight=cfg.generator.get("rep_weight", 0.0),
         )
     )
 
