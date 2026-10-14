@@ -153,26 +153,67 @@ class GeneratorTrainer:
 
     def fit(self, data_iter: Callable[[], Dict[str, torch.Tensor]]):
         import os
+        import signal
+
+        done_marker = self.cfg.ckpt_path + ".done" if self.cfg.ckpt_path else ""
+        if done_marker and os.path.exists(done_marker):
+            print(f"[skip] training already complete ({done_marker} exists)")
+            return []
 
         history = []
         start = 0
         if self.cfg.resume and self.cfg.ckpt_path and os.path.exists(self.cfg.ckpt_path):
             start = self._load_ckpt(self.cfg.ckpt_path)
             print(f"[resume] loaded {self.cfg.ckpt_path} at step {start}")
-        for it in range(start, self.cfg.steps):
-            comps = self.step(data_iter())
-            if it % self.cfg.log_every == 0:
-                history.append({"step": it, **comps})
-                print(f"[{it:5d}] " + " ".join(f"{k}={v:.3f}" for k, v in comps.items()))
-            if (
-                self.cfg.ckpt_path
-                and self.cfg.save_every
-                and (it + 1) % self.cfg.save_every == 0
-            ):
-                self._save_ckpt(self.cfg.ckpt_path, it + 1)
-        if self.cfg.ckpt_path:
-            self._save_ckpt(self.cfg.ckpt_path, self.cfg.steps)
-            open(self.cfg.ckpt_path + ".done", "w").close()
+
+        # Track the latest committed step so a kill-signal handler can flush an
+        # up-to-date checkpoint (SLURM wall-time sends SIGTERM/SIGUSR1 before
+        # SIGKILL; chained jobs then resume with no lost work).
+        self._step = start
+
+        def _on_signal(signum, _frame):
+            if self.cfg.ckpt_path:
+                try:
+                    self._save_ckpt(self.cfg.ckpt_path, self._step)
+                    print(f"[signal {signum}] checkpoint saved at step "
+                          f"{self._step}; exiting")
+                except Exception as exc:  # best-effort: never mask the shutdown
+                    print(f"[signal {signum}] checkpoint save failed: {exc}")
+            raise SystemExit(0)
+
+        prev_handlers = {}
+        for sig_name in ("SIGTERM", "SIGINT", "SIGUSR1"):
+            sig = getattr(signal, sig_name, None)
+            if sig is None:
+                continue
+            try:
+                prev_handlers[sig] = signal.signal(sig, _on_signal)
+            except (ValueError, OSError):
+                pass  # not main thread / unsupported platform (e.g. Windows SIGUSR1)
+
+        try:
+            for it in range(start, self.cfg.steps):
+                self._step = it
+                comps = self.step(data_iter())
+                if it % self.cfg.log_every == 0:
+                    history.append({"step": it, **comps})
+                    print(f"[{it:5d}] " + " ".join(f"{k}={v:.3f}" for k, v in comps.items()))
+                if (
+                    self.cfg.ckpt_path
+                    and self.cfg.save_every
+                    and (it + 1) % self.cfg.save_every == 0
+                ):
+                    self._save_ckpt(self.cfg.ckpt_path, it + 1)
+                    self._step = it + 1
+            if self.cfg.ckpt_path:
+                self._save_ckpt(self.cfg.ckpt_path, self.cfg.steps)
+                open(done_marker, "w").close()
+        finally:
+            for sig, handler in prev_handlers.items():
+                try:
+                    signal.signal(sig, handler)
+                except (ValueError, OSError):
+                    pass
         return history
 
     def _save_ckpt(self, path: str, step: int) -> None:
