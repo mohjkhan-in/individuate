@@ -72,13 +72,45 @@ def count_repetition(captions: list[str]) -> list[float]:
 # Off-topic / unsafe lexicon: biographical persona filler + explicit terms the
 # CLIP grounding reward can hack toward. Penalised so captions stay on the face.
 _OFFTOPIC_WORDS = frozenset({
+    # showbiz / occupation persona
     "actor", "actress", "singer", "musician", "career", "industry", "star",
     "famous", "popular", "celebrity", "pioneer", "legend", "icon", "married",
-    "divorced", "husband", "wife", "hobbies", "sports", "movies", "humor",
-    "humour", "personality",
+    "divorced", "husband", "wife", "hobbies", "movies", "humor", "humour",
+    "personality", "genius", "talented",
+    # sports persona (observed reward-hack mode)
+    "athlete", "athletic", "player", "players", "professionally", "league",
+    "team", "teams", "football", "basketball", "baseball", "soccer", "offense",
+    "defense", "offensive", "defensive", "coach", "season", "sport", "sports",
+    # politics / activism persona (observed reward-hack mode)
+    "leader", "leadership", "justice", "equality", "rights", "poverty",
+    "racism", "discrimination", "injustice", "economy", "economic",
+    "government", "corruption", "community", "nation", "country", "society",
+    "politician", "president", "election", "campaign", "education", "jobs",
+    "war", "fight", "fights", "fighting", "activist", "advocate", "powerful",
+    "courageous",
+    # explicit
     "sexy", "nipples", "tits", "boobs", "breasts", "cock", "dick", "pussy",
     "naked", "nude", "porn", "horny", "cum", "bombshell", "babe", "erotic",
     "orgasm",
+    # vulgar garbage tokens observed in dumps
+    "butthole", "asshole", "shit", "fuck", "bitch",
+})
+
+
+# On-face descriptive vocabulary: positively rewarded so the generator is pulled
+# toward describing the face itself rather than evading into persona narrative.
+_FACE_WORDS = frozenset({
+    "hair", "hairline", "bangs", "fringe", "wavy", "curly", "straight", "bald",
+    "balding", "blond", "blonde", "brunette", "redhead", "ginger", "grey",
+    "gray", "eyes", "eye", "eyebrows", "eyebrow", "eyelashes", "lashes",
+    "nose", "lips", "lip", "mouth", "smile", "smiling", "grin", "grinning",
+    "teeth", "beard", "bearded", "moustache", "mustache", "goatee",
+    "sideburns", "stubble", "clean-shaven", "cheeks", "cheekbones", "chin",
+    "jaw", "jawline", "forehead", "face", "facial", "complexion", "skin",
+    "freckles", "wrinkles", "dimples", "glasses", "spectacles", "earrings",
+    "necklace", "hat", "cap", "pale", "tan", "tanned", "rosy", "oval", "round",
+    "narrow", "wide", "pointed", "freckled", "brown", "black", "blue", "green",
+    "hazel", "dark", "light", "short", "long", "thick", "thin",
 })
 
 
@@ -86,15 +118,31 @@ def count_offtopic_tokens(captions: list[str]) -> list[float]:
     """Per-caption count of off-topic persona / explicit words (0 = on-face).
 
     The CLIP grounding reward can raise cosine similarity by drifting into
-    biographical persona filler ("actress", "musician") or CLIP's explicit-text
-    subspace. This tokenizer-free lexical count penalises both so the generator
-    is pushed back toward describable facial content. No-op when
-    offtopic_weight == 0.
+    biographical persona filler ("actress", "musician", "athlete", "leader") or
+    CLIP's explicit-text subspace. This tokenizer-free lexical count penalises
+    both so the generator is pushed back toward describable facial content.
+    No-op when offtopic_weight == 0.
     """
     counts = []
     for cap in captions:
         words = [w.strip(".,!?;:'()").lower() for w in cap.split()]
         counts.append(float(sum(1 for w in words if w in _OFFTOPIC_WORDS)))
+    return counts
+
+
+def count_face_tokens(captions: list[str], cap: int = 8) -> list[float]:
+    """Per-caption count of on-face descriptive words (capped), 0 = off-face.
+
+    Positive signal for the face_weight reward: counts distinct facial-descriptor
+    words so captions that actually describe hair/eyes/beard/smile/skin etc. are
+    rewarded. Counts DISTINCT words (and caps the total) so the policy cannot
+    reward-hack by spamming one face word; repetition is separately penalised.
+    No-op when face_weight == 0.
+    """
+    counts = []
+    for text in captions:
+        words = {w.strip(".,!?;:'()").lower() for w in text.split()}
+        counts.append(float(min(len(words & _FACE_WORDS), cap)))
     return counts
 
 
@@ -182,12 +230,16 @@ class GeneratorTrainer:
         offtopic_counts = torch.as_tensor(
             count_offtopic_tokens(captions), dtype=torch.float32, device=self.device
         )
+        face_counts = torch.as_tensor(
+            count_face_tokens(captions), dtype=torch.float32, device=self.device
+        )
         reward, comps = self.reward(
             text_emb, id_anchor, attr_pred, attr_true,
             base_logprob / seq_len, (policy_logprob / seq_len).detach(),
             propnoun_counts=propnoun_counts,
             rep_fracs=rep_fracs,
             offtopic_counts=offtopic_counts,
+            face_counts=face_counts,
         )
 
         # REINFORCE with moving-average baseline + per-batch advantage

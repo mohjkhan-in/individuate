@@ -192,7 +192,7 @@ def load_generator(path: str, device: str = "cpu") -> "IndividuateNet":
 _NSFW_WORDS = (
     "sexy", "nipples", "tits", "boobs", "breasts", "cock", "dick", "pussy",
     "naked", "nude", "porn", "horny", "cum", "erotic", "orgasm", "bombshell",
-    "babe",
+    "babe", "butthole", "asshole", "shit", "fuck", "bitch",
 )
 
 

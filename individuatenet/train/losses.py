@@ -27,6 +27,7 @@ class RewardWeights:
     ground_weight: float = 0.0  # positive CLIP grounding reward cos(text, own image) (0 = off)
     rep_weight: float = 0.0  # penalty on degenerate repetition / looping (0 = off)
     offtopic_weight: float = 0.0  # penalty on off-topic persona / explicit words (0 = off)
+    face_weight: float = 0.0  # positive reward for on-face descriptive vocabulary (0 = off)
 
 
 class IndividuationReward:
@@ -108,6 +109,18 @@ class IndividuationReward:
         """
         return -offtopic_counts
 
+    def face_term(self, face_counts: torch.Tensor) -> torch.Tensor:
+        """Per-sample POSITIVE reward for on-face descriptive vocabulary.
+
+        Blacklisting personas is whack-a-mole: the policy keeps finding new
+        off-topic modes (showbiz -> sports -> politics). This term rewards the
+        caption for *using* facial-description words (hair, eyes, beard, nose,
+        smile, cheeks, jaw, skin, eyebrows...), a bounded positive pull toward
+        describing the face itself. Returned positive so more facial content
+        raises reward. No-op when face_weight == 0.
+        """
+        return face_counts
+
     def __call__(
         self,
         text_emb: torch.Tensor,
@@ -119,6 +132,7 @@ class IndividuationReward:
         propnoun_counts: torch.Tensor | None = None,
         rep_fracs: torch.Tensor | None = None,
         offtopic_counts: torch.Tensor | None = None,
+        face_counts: torch.Tensor | None = None,
     ):
         i_ty = self.identity_term(text_emb, id_anchor)
         i_ta = self.attribute_term(text_emb, attr_pred, attr_true)
@@ -143,6 +157,10 @@ class IndividuationReward:
         if self.w.offtopic_weight and offtopic_counts is not None:
             offtopic = self.offtopic_term(offtopic_counts.to(i_ty))
             reward = reward + self.w.offtopic_weight * offtopic
+        face = torch.zeros_like(i_ty)
+        if self.w.face_weight and face_counts is not None:
+            face = self.face_term(face_counts.to(i_ty))
+            reward = reward + self.w.face_weight * face
         components = {
             "i_ty": i_ty.mean().item(),
             "i_ta": (-i_ta).mean().item(),
@@ -151,6 +169,7 @@ class IndividuationReward:
             "ground": vground.mean().item(),
             "rep": (-rep).mean().item(),
             "offtopic": (-offtopic).mean().item(),
+            "face": face.mean().item(),
             "reward": reward.mean().item(),
         }
         return reward, components

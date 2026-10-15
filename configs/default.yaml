@@ -36,6 +36,7 @@ generator:
   ground_weight: 0.0    # positive CLIP grounding reward cos(text, own face) (0 = off)
   rep_weight: 0.0       # penalise degenerate repetition / looping (0 = off)
   offtopic_weight: 0.0  # penalise off-topic persona / explicit words (0 = off)
+  face_weight: 0.0      # reward on-face descriptive vocabulary (0 = off)
   lr: 1.0e-4
   steps: 5000
   batch_size: 32
