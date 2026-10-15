@@ -6,6 +6,7 @@ data:
   name: vggface2
   root: data_local/vggface2
   attr_source: maad          # MAAD-Face attribute annotations
+  # attr_csv: MAAD_Face.csv  # uncomment after staging MAAD-Face (scripts/prepare_vggface2.sh)
   image_dir: train
   test_frac: 0.5
 
