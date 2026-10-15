@@ -31,7 +31,7 @@
 #     bash scripts/prepare_vggface2.sh
 #
 # Env knobs:
-#   DEST                 destination dir           (default: data_local/vggface2)
+#   DEST                 destination dir  (default: /ssd_scratch/mohjkhan/vggface2)
 #   VGGFACE2_TRAIN_TAR   local path OR http(s) URL to the train tar(.gz)
 #   MAAD_FACE_CSV        local path OR http(s) URL to MAAD_Face.csv
 #   VGGFACE2_KAGGLE      kaggle dataset slug for the images (owner/name)
@@ -40,7 +40,7 @@
 # =============================================================================
 set -euo pipefail
 
-DEST="${DEST:-data_local/vggface2}"
+DEST="${DEST:-/ssd_scratch/mohjkhan/vggface2}"
 TRAIN_DIR="$DEST/train"
 MAAD_DST="$DEST/MAAD_Face.csv"
 MAX_IDS="${MAX_IDS:-0}"

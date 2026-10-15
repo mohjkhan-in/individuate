@@ -4,7 +4,7 @@ device: cuda
 
 data:
   name: vggface2
-  root: data_local/vggface2
+  root: /ssd_scratch/mohjkhan/vggface2   # node-local scratch (re-stage per allocation)
   attr_source: maad          # MAAD-Face attribute annotations
   # attr_csv: MAAD_Face.csv  # uncomment after staging MAAD-Face (scripts/prepare_vggface2.sh)
   image_dir: train
