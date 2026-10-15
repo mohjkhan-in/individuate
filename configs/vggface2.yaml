@@ -26,11 +26,19 @@ generator:
   prefix_tokens: 16
   context_dim: 512
   lambda_attr: 1.5           # heavier attribute penalty (attribute-collision testbed)
-  beta_fluency: 0.1
+  beta_fluency: 0.5          # per-token KL-to-base anchor (keeps captions fluent)
+  attr_bce_cap: 1.0          # bound the leakage penalty -> blocks OOD reward-hacking
+  propnoun_weight: 0.3       # penalise confabulated names/places/ages/dates (0 = off)
+  ground_weight: 0.7         # reward cos(caption, own face) -> pull toward description (0 = off)
+  rep_weight: 0.5            # penalise degenerate repetition / looping (0 = off)
+  offtopic_weight: 0.5       # penalise off-topic persona / explicit words (0 = off)
+  face_weight: 0.5           # reward on-face descriptive vocabulary (0 = off)
   lr: 1.0e-4
   steps: 8000
   batch_size: 32
   max_new_tokens: 40
+  warmup_steps: 800          # supervised prefix-tuning before REINFORCE (fluent + on-face init)
+  save_every: 500
 
 eval:
   seeds: [0, 1, 2]
