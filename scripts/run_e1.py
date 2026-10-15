@@ -148,6 +148,17 @@ def run_real(args) -> dict:
                                   max_new_tokens=cfg.generator.get("max_new_tokens", 40))
         gen_caps = dict(zip(ids, gcaps))
         sources = sources + ["generated"]
+        if getattr(args, "dump_captions", 0):
+            from individuatenet.train.train_generator import (
+                count_offtopic_tokens, count_repetition,
+            )
+            print("\n--- generated captions (safety audit) ---")
+            for i, cap in list(zip(ids, gcaps))[: args.dump_captions]:
+                off = count_offtopic_tokens([cap])[0]
+                rep = count_repetition([cap])[0]
+                flag = "  <-- OFF-TOPIC" if off > 0 else ""
+                print(f"[{i}] off={off:.0f} rep={rep:.2f} | {cap}{flag}")
+            print("--- end caption dump ---\n")
 
     table: dict = {}
     for source in sources:
@@ -220,6 +231,8 @@ def main() -> None:
     ap.add_argument("--ks", type=int, nargs="+", default=[1, 5, 10])
     ap.add_argument("--generator_ckpt", type=str, default=None,
                     help="real path: add a 'generated' source from a trained checkpoint")
+    ap.add_argument("--dump_captions", type=int, default=0,
+                    help="print the first N generated captions (safety audit) before scoring")
     args = ap.parse_args()
 
     if args.config:
