@@ -84,7 +84,7 @@ def run_real(args) -> dict:
     from individuatenet.models.encoders import FrozenEncoders
 
     cfg = load_config(args.config)
-    seed = cfg.get("seed", 0)
+    seed = args.seed if getattr(args, "seed", None) is not None else cfg.get("seed", 0)
     set_seed(seed)
     rng = np.random.default_rng(seed)
 
@@ -233,6 +233,8 @@ def main() -> None:
                     help="real path: add a 'generated' source from a trained checkpoint")
     ap.add_argument("--dump_captions", type=int, default=0,
                     help="print the first N generated captions (safety audit) before scoring")
+    ap.add_argument("--seed", type=int, default=None,
+                    help="override cfg.seed (real path): varies the ctx/probe split per run")
     args = ap.parse_args()
 
     if args.config:

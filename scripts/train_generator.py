@@ -19,10 +19,12 @@ def main() -> None:
     ap.add_argument("--config", type=str, required=True)
     ap.add_argument("--out", type=str, default=None,
                     help="checkpoint dir (use a durable $HOME path on the cluster)")
+    ap.add_argument("--seed", type=int, default=None,
+                    help="override cfg.seed for multi-seed runs")
     args = ap.parse_args()
 
     cfg = load_config(args.config)
-    set_seed(cfg.get("seed", 0))
+    set_seed(args.seed if args.seed is not None else cfg.get("seed", 0))
 
     import torch
 
