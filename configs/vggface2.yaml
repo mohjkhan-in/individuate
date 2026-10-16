@@ -26,7 +26,7 @@ generator:
   base_lm: gpt2
   prefix_tokens: 16
   context_dim: 512
-  lambda_attr: 1.5           # heavier attribute penalty (attribute-collision testbed)
+  lambda_attr: 0.5           # attribute-leakage penalty (1.5 over-suppressed -> generic template, AUC 0.607)
   beta_fluency: 0.5          # per-token KL-to-base anchor (keeps captions fluent)
   attr_bce_cap: 1.0          # bound the leakage penalty -> blocks OOD reward-hacking
   propnoun_weight: 0.3       # penalise confabulated names/places/ages/dates (0 = off)
