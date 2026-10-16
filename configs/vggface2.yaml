@@ -6,7 +6,7 @@ data:
   name: vggface2
   root: /ssd_scratch/mohjkhan/vggface2   # node-local scratch (re-stage per allocation)
   attr_source: maad          # MAAD-Face attribute annotations
-  # attr_csv: MAAD_Face.csv  # uncomment after staging MAAD-Face (scripts/prepare_vggface2.sh)
+  attr_csv: MAAD_Face.csv    # staged into <root> by scripts/prepare_vggface2.sh
   image_dir: train
   test_frac: 0.5
 
