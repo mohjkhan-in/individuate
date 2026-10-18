@@ -78,7 +78,8 @@ def main() -> None:
 
     paths: list = []
     for i in ids:
-        imgs = sorted(by_id[i], key=lambda s: s.image_path)[: args.max_images_per_id]
+        lim = args.max_images_per_id or None  # 0 -> all images
+        imgs = sorted(by_id[i], key=lambda s: s.image_path)[:lim]
         paths.extend(s.image_path for s in imgs)
     print(f"[caption_vlm] {len(ids)} identities, {len(paths)} images "
           f"-> {args.out}  (model={args.model}, device={device})")
