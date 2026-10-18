@@ -161,6 +161,14 @@ def run_real(args) -> dict:
             print("--- end caption dump ---\n")
 
     table: dict = {}
+    rich_caps = None
+    if getattr(args, "rich_captions", None):
+        rich_caps = json.loads(Path(args.rich_captions).read_text(encoding="utf-8"))
+        n_hit = sum(
+            any(s.image_path in rich_caps for s in ctx_imgs[i]) for i in ids
+        )
+        print(f"[rich] free-text VLM captions: {n_hit}/{len(ids)} identities covered "
+              f"(rest fall back to attribute text)")
     for source in sources:
         captions = []
         for i in ids:
@@ -172,6 +180,14 @@ def run_real(args) -> dict:
                 active.sort(key=lambda k: freq[k])  # rarest active attrs first
                 cap = build_captions(modal, "discriminative",
                                      distinctive_keys=active[: args.distinctive_k])
+            elif source == "rich":
+                free_text = None
+                if rich_caps is not None:
+                    for s in ctx_imgs[i]:  # context images only -> no probe leakage
+                        if s.image_path in rich_caps:
+                            free_text = rich_caps[s.image_path]
+                            break
+                cap = build_captions(modal, "rich", free_text=free_text)
             else:
                 cap = build_captions(modal, source)
             captions.append(cap)
@@ -235,6 +251,9 @@ def main() -> None:
                     help="print the first N generated captions (safety audit) before scoring")
     ap.add_argument("--seed", type=int, default=None,
                     help="override cfg.seed (real path): varies the ctx/probe split per run")
+    ap.add_argument("--rich_captions", type=str, default=None,
+                    help="real path: JSON {image_path: caption} from scripts/caption_vlm.py; "
+                         "makes the 'rich' source a genuine free-text VLM baseline")
     args = ap.parse_args()
 
     if args.config:
