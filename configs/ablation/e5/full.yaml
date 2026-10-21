@@ -1,0 +1,53 @@
+seed: 0
+device: cuda
+data:
+  name: celeba
+  root: data_local/celeba
+  attr_file: list_attr_celeba.txt
+  identity_file: identity_CelebA.txt
+  image_dir: img_align_celeba
+  test_frac: 0.5
+encoders:
+  backbone: ViT-B-32-quickgelu
+  pretrained: openai
+  offline: false
+u:
+  backend: torch
+  temperature: 0.07
+  ridge_lambda: 0.01
+  critic_steps: 3000
+  critic_lr: 0.001
+generator:
+  base_lm: gpt2
+  prefix_tokens: 16
+  context_dim: 512
+  lambda_attr: 0.5
+  beta_fluency: 0.5
+  attr_bce_cap: 1.0
+  propnoun_weight: 0.3
+  ground_weight: 0.7
+  rep_weight: 0.5
+  offtopic_weight: 0.5
+  face_weight: 0.5
+  lr: 0.0001
+  steps: 8000
+  batch_size: 32
+  max_new_tokens: 40
+  warmup_steps: 800
+  save_every: 500
+eval:
+  seeds:
+  - 0
+  - 1
+  - 2
+  caption_sources:
+  - attribute
+  - discriminative
+  - rich
+  - generated
+  rank_k:
+  - 1
+  - 5
+  - 10
+  bootstrap: 1000
+output_dir: results/ablation/e5_full
