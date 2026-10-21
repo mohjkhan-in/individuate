@@ -46,6 +46,15 @@ def _modal_attr(imgs, keys):
     return out
 
 
+def _encode_images(encoders, paths, bs=64):
+    """Mini-batched image encode (FrozenEncoders.encode_image runs the whole list
+    in one forward pass, which OOMs on thousands of context images)."""
+    if not paths:
+        return np.zeros((0, encoders.dim), dtype=np.float32)
+    chunks = [encoders.encode_image(paths[i:i + bs]) for i in range(0, len(paths), bs)]
+    return np.concatenate(chunks, axis=0)
+
+
 def run(args) -> dict:
     from individuatenet.utils import load_config
     from individuatenet.data.real import load_dataset
@@ -93,7 +102,7 @@ def run(args) -> dict:
         for s in imgs[:n_probe]:
             probe_paths.append(s.image_path)
             probe_ids.append(i)
-    probe_emb = encoders.encode_image(probe_paths)
+    probe_emb = _encode_images(encoders, probe_paths, bs=args.batch_size)
     probe_ids = np.asarray(probe_ids)
 
     # encode every context image once; build aligned per-row id / attr / image arrays
@@ -103,7 +112,7 @@ def run(args) -> dict:
             ctx_rows_paths.append(s.image_path)
             ctx_rows_ids.append(i)
             ctx_rows_attr.append([int(s.attributes.get(k, 0)) for k in attr_keys])
-    ctx_img_emb = encoders.encode_image(ctx_rows_paths)
+    ctx_img_emb = _encode_images(encoders, ctx_rows_paths, bs=args.batch_size)
     ctx_ids_arr = np.asarray(ctx_rows_ids)
     ctx_attr_arr = np.asarray(ctx_rows_attr, dtype=np.float64)
 
@@ -115,7 +124,8 @@ def run(args) -> dict:
     if args.generator_ckpt:
         from individuatenet.models.generator import generate_captions, load_generator
         ctx_mean = np.stack([
-            encoders.encode_image([s.image_path for s in ctx_imgs[i]]).mean(axis=0)
+            _encode_images(encoders, [s.image_path for s in ctx_imgs[i]],
+                           bs=args.batch_size).mean(axis=0)
             for i in ids
         ])
         gmodel = load_generator(args.generator_ckpt, device=cfg.get("device", "cpu"))
@@ -194,6 +204,8 @@ def main() -> None:
     ap.add_argument("--max_probe_per_id", type=int, default=4)
     ap.add_argument("--distinctive_k", type=int, default=3)
     ap.add_argument("--ks", type=int, nargs="+", default=[1, 5, 10])
+    ap.add_argument("--batch_size", type=int, default=64,
+                    help="image-encode mini-batch size (lower if CUDA OOM)")
     ap.add_argument("--generator_ckpt", type=str, default=None)
     ap.add_argument("--rich_captions", type=str, default=None)
     ap.add_argument("--out", type=str, default="results/e2_real.json")
