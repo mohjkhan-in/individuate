@@ -35,11 +35,13 @@ class FrozenEncoders:
         device: str = "cpu",
         dim: int = 512,
         offline: bool | None = None,
+        batch_size: int = 64,
     ):
         self.backbone = backbone
         self.pretrained = pretrained
         self.device = device
         self.dim = dim
+        self.batch_size = int(os.environ.get("INET_ENC_BATCH", batch_size))
         self.offline = (
             offline if offline is not None else os.environ.get("INET_OFFLINE") == "1"
         )
@@ -71,11 +73,16 @@ class FrozenEncoders:
         if self.offline or self._model is None:
             return np.stack([_hash_vector(t, self.dim) for t in texts])
         torch = self._torch
+        texts = list(texts)
+        out: List[np.ndarray] = []
         with torch.no_grad():
-            tokens = self._tokenizer(list(texts)).to(self.device)
-            feats = self._model.encode_text(tokens)
-            feats = feats / feats.norm(dim=-1, keepdim=True)
-        return feats.cpu().numpy()
+            for i in range(0, len(texts), self.batch_size):
+                chunk = texts[i : i + self.batch_size]
+                tokens = self._tokenizer(chunk).to(self.device)
+                feats = self._model.encode_text(tokens)
+                feats = feats / feats.norm(dim=-1, keepdim=True)
+                out.append(feats.cpu().numpy())
+        return np.concatenate(out, axis=0)
 
     # -- image ----------------------------------------------------------------
     def encode_image(self, image_paths: Sequence[str]) -> np.ndarray:
@@ -84,10 +91,15 @@ class FrozenEncoders:
         torch = self._torch
         from PIL import Image
 
-        batch = torch.stack(
-            [self._preprocess(Image.open(p).convert("RGB")) for p in image_paths]
-        ).to(self.device)
+        image_paths = list(image_paths)
+        out: List[np.ndarray] = []
         with torch.no_grad():
-            feats = self._model.encode_image(batch)
-            feats = feats / feats.norm(dim=-1, keepdim=True)
-        return feats.cpu().numpy()
+            for i in range(0, len(image_paths), self.batch_size):
+                chunk = image_paths[i : i + self.batch_size]
+                batch = torch.stack(
+                    [self._preprocess(Image.open(p).convert("RGB")) for p in chunk]
+                ).to(self.device)
+                feats = self._model.encode_image(batch)
+                feats = feats / feats.norm(dim=-1, keepdim=True)
+                out.append(feats.cpu().numpy())
+        return np.concatenate(out, axis=0)
