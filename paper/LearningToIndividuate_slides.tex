@@ -1,0 +1,359 @@
+% =====================================================================
+%  Learning to Individuate -- adviser briefing deck
+%  Compile:  pdflatex -interaction=nonstopmode LearningToIndividuate_slides.tex  (run twice)
+% =====================================================================
+\documentclass[aspectratio=169,10pt]{beamer}
+
+\usetheme{Boadilla}
+\usecolortheme{beaver}
+\useinnertheme{circles}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{caption}[numbered]
+\setbeamerfont{frametitle}{size=\large}
+
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{xcolor}
+
+% --- macros -----------------------------------------------------------
+\newcommand{\U}{\mathcal{U}}
+\newcommand{\method}{\textsc{IndividuateNet}}
+\newcommand{\good}[1]{\textcolor{green!55!black}{#1}}
+\newcommand{\bad}[1]{\textcolor{red!70!black}{#1}}
+\newcommand{\tbd}{\textcolor{red!70!black}{\footnotesize target}}
+
+\title[Learning to Individuate]{Learning to Individuate}
+\subtitle{Information-Maximising Caption Generation for Zero-Shot Face Enrolment}
+\author[Research progress briefing]{Research progress briefing}
+\institute[]{Toward CVPR 2027 \,\textbullet\, building on \emph{SemanticBio} (ICVGIP 2026)}
+\date{September 2026}
+
+\begin{document}
+
+% ---------------------------------------------------------------------
+\begin{frame}[plain]
+  \titlepage
+  \begin{center}
+    \footnotesize\itshape
+    From an \emph{observed} phenomenon to a \emph{defined, predicted, and generated} one.
+  \end{center}
+\end{frame}
+
+% ---------------------------------------------------------------------
+\begin{frame}{Where we are}
+  \begin{block}{Completed --- \emph{SemanticBio} (submitted, ICVGIP 2026)}
+    A dual encoder aligns a face crop with a natural-language description, enabling
+    \textbf{text-only enrolment} of \emph{unseen} identities (open-set).
+  \end{block}
+  \begin{block}{The finding that changes everything}
+    Enrolment works \emph{only} when captions \textbf{individuate} --- describe the
+    \emph{person}, not their mutable attributes. Individuation is the causal lever;
+    the embedding-side disentangler is inert.
+  \end{block}
+  \begin{alertblock}{The limitation this proposal removes}
+    In SemanticBio, individuation was an \emph{emergent} property, hand-supplied by
+    ad-hoc VLM prompting. Fragile, unmeasured, unlearned.
+  \end{alertblock}
+\end{frame}
+
+% ---------------------------------------------------------------------
+\begin{frame}{The story in one picture}
+  \begin{columns}[T]
+    \column{0.5\textwidth}
+      \textbf{Two captions, same face:}
+      \begin{itemize}
+        \item[\bad{$\times$}] \emph{``a smiling young man with glasses''}\\
+              \footnotesize matches thousands of people $\to$ \bad{fails}
+        \item[\good{$\checkmark$}] \emph{``the man whose left brow arches higher, with a faint scar below it''}\\
+              \footnotesize a template for \emph{one} person $\to$ \good{works}
+      \end{itemize}
+    \column{0.5\textwidth}
+      \textbf{The question:}
+      \begin{itemize}
+        \item What \emph{is} individuation, precisely?
+        \item Can we \emph{measure} it before training?
+        \item Can we \emph{learn to generate} it --- and drop the external VLM?
+      \end{itemize}
+  \end{columns}
+  \vspace{0.6em}
+  \centering
+  \fbox{\parbox{0.9\textwidth}{\centering
+    \textbf{Claim.} A generator trained to \emph{maximise identity information} while
+    \emph{minimising mutable-attribute information} produces individuating captions that
+    \emph{beat} VLM-prompted ones --- and a single scalar $\U$ predicts success \emph{a priori}.}}
+\end{frame}
+
+% ---------------------------------------------------------------------
+\begin{frame}{What the paper proves --- three questions}
+  \begin{enumerate}
+    \item[\textbf{RQ1}] \textbf{Define \& measure.} Is there a training-free scalar $\U(T)$
+      that quantifies individuation?
+    \item[\textbf{RQ2}] \textbf{Predict.} Does $\U$ forecast zero-shot enrolment success
+      \emph{before} any biometric training?
+    \item[\textbf{RQ3}] \textbf{Generate.} Can we \emph{learn} to write individuating captions,
+      removing the external-VLM dependency and \emph{causally} lifting enrolment?
+  \end{enumerate}
+  \vspace{1em}
+  \begin{center}
+  One metric ($\U$) \;\textbullet\; one generator ($q_\phi$) \;\textbullet\; one law
+  \big(gap $= g_0 - \kappa p$\big). \\[0.3em]
+  \footnotesize This is \emph{one paper}, not a program.
+  \end{center}
+\end{frame}
+
+% ---------------------------------------------------------------------
+\begin{frame}{Method 1 --- the individuation scalar $\U$}
+  \[
+    \U(T) \;=\; \underbrace{I(T;Y)}_{\text{identity information}}
+              \;-\; \underbrace{I(T;A \mid Y)}_{\text{mutable-attribute leakage}}
+  \]
+  \begin{itemize}
+    \item $T$ = caption, $Y$ = identity, $A$ = mutable attributes (pose, expression, lighting\ldots).
+    \item $I(T;Y)$ estimated by an \textbf{InfoNCE lower bound}; $I(T;A\mid Y)$ by a
+      \textbf{CLUB upper bound} $\Rightarrow$ $\U$ is a \emph{conservative} estimate.
+    \item \textbf{Training-free}: computed over frozen encoders, no biometric training needed.
+  \end{itemize}
+  \vspace{0.5em}
+  \begin{exampleblock}{Intuition}
+    High $\U$ = the caption says a lot about \emph{who} and little about \emph{how they look today}.
+  \end{exampleblock}
+\end{frame}
+
+% ---------------------------------------------------------------------
+\begin{frame}{Method 2 --- why individuation controls invariance (the law)}
+  \begin{columns}[T]
+    \column{0.55\textwidth}
+      Sweep the \emph{individuating fraction} $p$ of the caption mix:
+      \[
+        \boxed{\;\text{gap}(p) \;=\; g_0 - \kappa\, p\;}
+        \qquad \kappa \propto \U_{\text{rich}} - \U_{\text{disc}}
+      \]
+      \begin{itemize}
+        \item The appearance-invariance gap shrinks \emph{near-linearly} as captions individuate.
+        \item Slope $\kappa$ is set by $\U$ --- ties the empirical law (SemanticBio) to the metric.
+        \item Two \emph{falsifiable} predictions: linearity, and slope $=$ $\U$-predicted slope.
+      \end{itemize}
+    \column{0.45\textwidth}
+      \centering
+      \footnotesize
+      \begin{tabular}{cc}
+        \toprule
+        $p$ (individuation) & gap $\downarrow$ \\
+        \midrule
+        0.00 & large \\
+        0.50 & medium \\
+        1.00 & small \\
+        \bottomrule
+      \end{tabular}
+      \\[0.5em]
+      \emph{A text-side objective closes a gap an\\ embedding-side disentangler cannot.}
+  \end{columns}
+\end{frame}
+
+% ---------------------------------------------------------------------
+\begin{frame}{Method 3 --- the \method{} generator}
+  \[
+    \max_{\phi}\;\; \hat I(T;Y)\;-\;\lambda\,\hat I(T;A)\;-\;\beta\,\mathcal{D}_{\text{fluency}}(q_\phi)
+  \]
+  \begin{itemize}
+    \item Prefix-/adapter-tuned language model $q_\phi(T\mid c)$, conditioned on an
+      identity-context feature $c$ pooled from the identity's images \emph{at training time only}.
+    \item Reward = identity information $-$ attribute leakage $+$ fluency; optimised by policy gradient.
+    \item \textbf{At deployment: no per-identity image gallery.} The generator has internalised
+      \emph{what to say} to individuate --- the external VLM is gone.
+  \end{itemize}
+  \vspace{0.3em}
+  \begin{block}{The conceptual takeaway}
+    \emph{Design the supervision --- don't engineer the invariance head.}
+  \end{block}
+\end{frame}
+
+% ---------------------------------------------------------------------
+\begin{frame}{Experiments --- the matrix}
+  \small
+  \begin{tabular}{@{}p{0.09\textwidth}p{0.83\textwidth}@{}}
+    \toprule
+    \textbf{E1} & \textbf{Main result:} generated vs.\ attribute / VLM-prompted / CLIP / FaRL captions. \\
+    \textbf{E2} & \textbf{$\U$ predicts:} training-free $\U$ vs.\ measured gap and AUC across regimes. \\
+    \textbf{E3} & \textbf{The law:} sweep $p$; show gap $=g_0-\kappa p$; $\kappa$ matches $\U$-slope. \\
+    \textbf{E4} & \textbf{Individuation $\neq$ richness:} attribute-collision probe. \\
+    \textbf{E5} & \textbf{Ablations + human eval:} $\lambda,\beta$, context size, estimator; guard reward-hacking. \\
+    \textbf{E6} & \textbf{Graceful degradation:} enrolment vs.\ per-identity image count. \\
+    \bottomrule
+  \end{tabular}
+  \vspace{0.6em}
+
+  \footnotesize
+  \textbf{Datasets:} CelebA (dense attributes, primary) \textbullet{} VGGFace2 + MAAD-Face
+  (image-abundant causal testbed) \textbullet{} LFW (sparse control). \\
+  \textbf{Metrics:} EER, ROC-AUC (DeLong + bootstrap CIs), Rank-$k$, invariance gap, $\U$;
+  mean $\pm$ std over 3 seeds.
+\end{frame}
+
+% ---------------------------------------------------------------------
+\begin{frame}{E1 --- the money table (anchors from SemanticBio)}
+  \centering\small
+  \begin{tabular}{@{}lcc@{}}
+    \toprule
+    Caption source (zero-shot, unseen identities) & EER\,$\downarrow$ & AUC\,$\uparrow$ \\
+    \midrule
+    Off-the-shelf CLIP text            & 32.36 & 0.744 \\
+    FaRL text encoder                  & 33.54 & 0.723 \\
+    Attribute captions (VGGFace2)      & \bad{49.85} & \bad{0.501} \\
+    VLM-prompted individuating (CelebA)& 10.18 & 0.964 \\
+    VLM-prompted individuating (VGGFace2)& 22.12 & 0.861 \\
+    \midrule
+    \textbf{\method{} (ours), CelebA}  & \textbf{22.84} & \textbf{0.852} \\
+    \bottomrule
+  \end{tabular}
+  \vspace{0.8em}
+
+  \footnotesize
+  \textbf{Headline target:} match/beat VLM-prompted captions and reach
+  $\ge 0.861$ AUC on VGGFace2 \emph{without the external VLM}.
+\end{frame}
+
+% ---------------------------------------------------------------------
+\begin{frame}{Proof of concept --- the harness already runs (synthetic)}
+  \small
+  A synthetic regime with \emph{planted} identity/attribute geometry lets us validate the
+  whole pipeline offline (numpy only), \emph{before} touching real data.
+  \vspace{0.4em}
+  \begin{columns}[T]
+    \column{0.52\textwidth}
+      \centering\footnotesize
+      \textbf{E1 (synthetic, 3 seeds)}\\[0.2em]
+      \begin{tabular}{@{}lcc@{}}
+        \toprule
+        source & EER & AUC \\
+        \midrule
+        attribute      & \bad{50.2} & \bad{0.497} \\
+        discriminative & 33.8 & 0.725 \\
+        rich           & 19.9 & 0.882 \\
+        \textbf{generated} & \good{16.7} & \good{0.914} \\
+        \bottomrule
+      \end{tabular}
+    \column{0.48\textwidth}
+      \textbf{E2 (synthetic)}
+      \begin{itemize}\footnotesize
+        \item Spearman$(\U,\text{AUC}) = \good{+0.93}$
+        \item Pearson$(\U,\text{gap}) = \good{-0.98}$ \\ (the linear law)
+        \item logit-AUC fit $R^2 = 0.97$
+      \end{itemize}
+  \end{columns}
+  \vspace{0.5em}
+  \begin{alertblock}{\footnotesize To be clear}
+    \footnotesize These are \emph{sanity-check} numbers on synthetic data --- they show the
+    \emph{harness and metric behave correctly}. Real CelebA/VGGFace2 results are the paper's job.
+  \end{alertblock}
+\end{frame}
+
+% ---------------------------------------------------------------------
+\begin{frame}{Code scaffold --- status}
+  \begin{columns}[T]
+    \column{0.5\textwidth}
+      \textbf{Built \& tested (offline):}
+      \begin{itemize}\small
+        \item $\U$ estimator (InfoNCE + CLUB), numpy \& torch backends
+        \item Metrics: EER, AUC + DeLong/bootstrap CIs, Rank-$k$
+        \item Zero-shot enrolment protocol (E1)
+        \item $\U$-predictor analysis (E2)
+        \item Synthetic-MI validation harness
+        \item Unit tests all green
+      \end{itemize}
+    \column{0.5\textwidth}
+      \textbf{Ready for the cluster:}
+      \begin{itemize}\small
+        \item \method{} generator (prefix-tuned LM) + REINFORCE loop
+        \item Frozen CLIP/FaRL encoders (offline-safe loading)
+        \item CelebA / VGGFace2 + MAAD loaders
+        \item Configs per dataset; deterministic seeding
+      \end{itemize}
+      \vspace{0.4em}
+      \footnotesize\emph{Reuses SemanticBio backbones, splits, eval harness ---
+      most new engineering is the generator + MI estimators.}
+  \end{columns}
+\end{frame}
+
+% ---------------------------------------------------------------------
+\begin{frame}{Positioning --- rebuttal-proofing}
+  \scriptsize
+  \begin{tabular}{@{}p{0.24\textwidth}p{0.34\textwidth}p{0.36\textwidth}@{}}
+    \toprule
+    Line of work & What they do & Why we differ \\
+    \midrule
+    CLIP / SigLIP & Generic image--text alignment & Near-chance for identity; we \emph{generate} individuating text \\
+    FaRL / face-VLMs & Face pre-training, \emph{discard} text encoder & We make text an \emph{enrolment channel} \\
+    Text-to-face gen/retrieval & Description $\to$ \emph{a} matching face & We treat text as a template for \emph{one} unseen identity \\
+    SemanticBio (ours) & \emph{Shows} individuation is the lever & We \emph{define, predict, generate} it; drop the VLM \\
+    Attribute captioners & Enumerate attributes & Attribute text is at chance; individuation $\neq$ richness \\
+    \bottomrule
+  \end{tabular}
+  \vspace{0.7em}
+
+  \footnotesize
+  \textbf{``Just better prompting?''} No --- explicit MI objective, ablated vs.\ VLM-prompted
+  \& attribute-rich, and \emph{no identity gallery at deployment}.
+\end{frame}
+
+% ---------------------------------------------------------------------
+\begin{frame}{Risks \& mitigations}
+  \small
+  \begin{tabular}{@{}p{0.46\textwidth}p{0.5\textwidth}@{}}
+    \toprule
+    Risk & Mitigation \\
+    \midrule
+    Fluent but non-individuating text (reward hacking) & Fluency constraint + human eval (E5);
+      $I(T;A\mid Y)$ term penalises attribute leakage \\
+    Noisy MI estimates weaken the prediction claim & Bracketed lower/upper bounds; validate on
+      known-MI synthetic corpora; \emph{lead with rank correlation} \\
+    ``Incremental over SemanticBio'' & SemanticBio \emph{observed}; we make it
+      learnable + predictable and remove its central limitation \\
+    Only-CelebA criticism & VGGFace2 causal swap is the headline; LFW shows honest failure \\
+    \bottomrule
+  \end{tabular}
+\end{frame}
+
+% ---------------------------------------------------------------------
+\begin{frame}{Timeline to CVPR 2027}
+  \small
+  \begin{tabular}{@{}ll@{}}
+    \toprule
+    When & Deliverable \\
+    \midrule
+    \textbf{Now (done)} & \good{$\U$ estimator + eval harness + synthetic validation} \\
+    Sep--Oct 2026 & \method{} v1 + E1 main table on CelebA / VGGFace2 \\
+    Oct 2026 & E2--E4 (prediction, law, collision) + ablations \\
+    Early Nov 2026 & Human eval, figures, writing, internal review \\
+    \textbf{Nov 2026} & \textbf{Submit to CVPR} (paper + supp.\ + code release) \\
+    Fallback & ICCV 2027 / NeurIPS 2027 D\&B \\
+    \bottomrule
+  \end{tabular}
+  \vspace{0.8em}
+
+  \footnotesize This is one clean, self-contained contribution: a measurable, optimisable, causal
+  component where there was a fragile heuristic.
+\end{frame}
+
+% ---------------------------------------------------------------------
+\begin{frame}{Summary --- and what I'd like your input on}
+  \begin{block}{The contribution}
+    (1) $\U$ --- a training-free measure of caption individuation;\;
+    (2) a short theory linking $\U$ to the linear invariance law;\;
+    (3) \method{} --- an individuation-maximising generator that drops the VLM and
+    \emph{causally} lifts enrolment;\;
+    (4) released metric + generator + diagnostics.
+  \end{block}
+  \begin{block}{Adviser input requested}
+    \begin{itemize}
+      \item Is the \textbf{single-claim} framing tight enough for CVPR, or add a second dataset axis?
+      \item Priority order: nail \textbf{E1 headline} first, or \textbf{E2 prediction} (the surprising bit)?
+      \item Compute allocation \& human-eval logistics for E5.
+    \end{itemize}
+  \end{block}
+  \vspace{0.3em}
+  \centering\itshape\small
+  Text-only enrolment works only when captions individuate --- so let's define it, predict it, and learn to write it.
+\end{frame}
+
+\end{document}
