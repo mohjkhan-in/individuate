@@ -80,15 +80,41 @@ def main() -> None:
 
     api = HfApi(token=args.token)
 
+    # Resolve the repo namespace from the authenticated user. HF repo ids are
+    # '<username-or-org>/<name>' — never an email. If the caller passed just a
+    # name, or a namespace that is not a valid HF handle (e.g. an email), we
+    # substitute the logged-in username.
+    try:
+        username = api.whoami()["name"]
+    except Exception as exc:  # noqa: BLE001
+        sys.exit(
+            "[error] could not resolve your HF username — are you logged in?\n"
+            "  Run: huggingface-cli login   (or export HF_TOKEN=hf_xxx)\n"
+            f"  details: {exc}"
+        )
+
+    def _valid_handle(s: str) -> bool:
+        import re
+
+        return bool(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", s))
+
+    name = args.repo_id.split("/")[-1]
+    namespace = args.repo_id.rsplit("/", 1)[0] if "/" in args.repo_id else ""
+    if not namespace or not _valid_handle(namespace):
+        if namespace:
+            print(f"[upload] '{namespace}' is not a valid HF handle -> using '{username}'")
+        namespace = username
+    repo_id = f"{namespace}/{name}"
+
     # Report what will be uploaded.
     files = [p for p in ckpt_dir.rglob("*") if p.is_file()]
     total_gb = sum(p.stat().st_size for p in files) / (1024 ** 3)
     print(f"[upload] {len(files)} files, {total_gb:.2f} GiB from {ckpt_dir}")
-    print(f"[upload] -> https://huggingface.co/{args.repo_id} "
+    print(f"[upload] -> https://huggingface.co/{repo_id} "
           f"({'private' if args.private else 'public'})")
 
     api.create_repo(
-        repo_id=args.repo_id,
+        repo_id=repo_id,
         repo_type="model",
         private=args.private,
         exist_ok=True,
@@ -97,7 +123,7 @@ def main() -> None:
     # Prefer the resumable large-folder uploader when available (big *.pt files).
     try:
         api.upload_large_folder(
-            repo_id=args.repo_id,
+            repo_id=repo_id,
             repo_type="model",
             folder_path=str(ckpt_dir),
             allow_patterns=args.allow,
@@ -105,7 +131,7 @@ def main() -> None:
         print("[upload] done (upload_large_folder).")
     except AttributeError:
         api.upload_folder(
-            repo_id=args.repo_id,
+            repo_id=repo_id,
             repo_type="model",
             folder_path=str(ckpt_dir),
             path_in_repo=args.path_in_repo,
@@ -114,7 +140,7 @@ def main() -> None:
         )
         print("[upload] done (upload_folder).")
 
-    print(f"[upload] view at https://huggingface.co/{args.repo_id}/tree/main")
+    print(f"[upload] view at https://huggingface.co/{repo_id}/tree/main")
 
 
 if __name__ == "__main__":
