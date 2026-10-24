@@ -4,7 +4,7 @@
 # shared open-set split on CelebA and VGGFace2, 3 seeds each.
 #
 # Env overrides:
-#   REPO        repo root            (default $HOME/Individuate/individuatenet)
+#   REPO        repo root            (default: auto-detected = parent of scripts/)
 #   CKDIR       checkpoint root      (default $HOME/inet_ckpt)
 #   CELEBA_CK   CelebA generator.pt  (default $CKDIR/e5_full/generator.pt)
 #   VGG_CK      VGGFace2 generator.pt(default $CKDIR/vggface2/generator.pt)
@@ -16,7 +16,9 @@
 #   VGGFACE2_ROOT  VGGFace2 train/      (for auto-export, optional)
 set -euo pipefail
 
-REPO=${REPO:-$HOME/Individuate/individuatenet}
+# Repo root = parent of this script's directory (robust to clone location).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO=${REPO:-$(dirname "$SCRIPT_DIR")}
 CKDIR=${CKDIR:-$HOME/inet_ckpt}
 CELEBA_CK=${CELEBA_CK:-$CKDIR/e5_full/generator.pt}
 VGG_CK=${VGG_CK:-$CKDIR/vggface2/generator.pt}
