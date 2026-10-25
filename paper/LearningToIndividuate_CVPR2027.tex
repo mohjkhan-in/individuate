@@ -52,8 +52,7 @@ while suppressing mutable-attribute content, which produces individuating descri
 \emph{without} an external VLM at deployment. On the image-abundant regime (VGGFace2), \method{}
 lifts zero-shot enrolment from chance to a strong operating point without VLM prompting, matches
 or exceeds VLM-authored captions on CelebA, and its predicted individuation tracks measured
-enrolment across three datasets spanning sparse/abundant imagery and attribute/individuating
-captions. The takeaway reframes robust face--language matching as \emph{designing the
+enrolment across two datasets spanning attribute and individuating caption regimes. The takeaway reframes robust face--language matching as \emph{designing the
 supervision} rather than engineering an invariance head: what the caption says can be measured,
 predicted, and now generated.
 \end{abstract}
@@ -262,7 +261,7 @@ Eq.~\ref{eq:law} accounts for both the slope and the near-perfect linearity that
 reported only as an empirical fit, and it yields two falsifiable predictions we test directly:
 (a)~the measured slope $\kappa$ scales with $\U_{\text{rich}}-\U_{\text{disc}}$; and (b)~linearity
 breaks below an imagery threshold at which $I(T;Y)$ is not realisable --- the sparse-imagery
-(LFW) regime.
+regime.
 
 \subsection{Generating individuating captions (\method)}
 \label{sec:generator}
@@ -296,9 +295,8 @@ identifies as the second necessary condition.
 
 \subsection{Setup}
 \label{sec:exp-setup}
-\textbf{Datasets.} CelebA (dense attributes; primary controlled benchmark), VGGFace2 +
-MAAD-Face attributes (abundant imagery; the causal caption-swap testbed), and LFW (sparse
-imagery; the predicted linearity breakdown). All use identity-disjoint open-set splits reused
+\textbf{Datasets.} CelebA (dense attributes; primary controlled benchmark) and VGGFace2 +
+MAAD-Face attributes (abundant imagery; the causal caption-swap testbed). All use identity-disjoint open-set splits reused
 from SemanticBio~\cite{semanticbio} for comparability, and a synthetic corpus with known MI
 validates the $\U$ estimator. \textbf{Baselines.} Off-the-shelf CLIP~\cite{clip}, MetaCLIP, and
 FaRL~\cite{farl} text enrolment; attribute-only captions; and VLM-prompted individuating
@@ -623,7 +621,7 @@ between ($39.2$/$39.8$), consistent with its type-level, clothing-and-context ca
   \label{tab:collision}
 \end{table}
 
-\subsection{Ablations and human study (E5)}
+\subsection{Ablations (E5)}
 \label{sec:e5}
 Table~\ref{tab:ablation} sweeps the attribute penalty $\lambda$ and fluency weight $\beta$ of
 Eq.~\ref{eq:gen}, and removes the grounding/safety reward terms; Fig.~\ref{fig:lambda}
@@ -635,8 +633,7 @@ namely attribute leakage and per-identity confabulation. Removing the fluency (K
 both text quality and AUC ($0.829$), and over-weighting the attribute penalty collapses the
 policy to a generic template ($\lambda{=}1.5$, $0.801$). The full model ($\lambda{=}0.5$, all
 shaping terms, $0.866$) is the grounded, fluent, safe operating point rather than the raw-AUC
-maximiser. A human fluency/plausibility rating on a caption subset further guards against the
-failure mode in which the generator maximises $\U$ with disfluent or implausible text.
+maximiser. (A formal human fluency/plausibility study on a caption subset is left to future work.)
 
 \paragraph{Reward shaping against confabulation (safety and grounding guard).}
 The raw generator attains high $\U$ and AUC partly by \emph{confabulating}: it emits a unique
@@ -728,7 +725,7 @@ diagnostic; a short analysis derives the previously empirical linear invariance 
 $\mathrm{gap}(p)=g_0-\kappa p$ as a consequence of $\U$; and \method{} optimises $\U$ directly to
 produce individuating captions without an external VLM at deployment. On controlled synthetic
 corpora the generator already exceeds the strongest hand-built individuating captions and $\U$
-ranks outcomes at $\rho=0.93$, and we evaluate the same claims on CelebA, VGGFace2, and LFW. The
+ranks outcomes at $\rho=0.93$, and we evaluate the same claims on CelebA and VGGFace2. The
 broader message is a change of emphasis for robust face--language matching: \emph{design the
 supervision} --- decide what the caption should say --- rather than engineer an invariance head
 into the embedding.
