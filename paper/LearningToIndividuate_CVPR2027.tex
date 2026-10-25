@@ -703,9 +703,10 @@ enrolment gain is grounded facial content, not memorised text.
 
 \subsection{Graceful degradation (E6)}
 \label{sec:e6}
-Reducing per-identity imagery traces enrolment against $n_{\text{img}}$, testing prediction (b)
-of Sec.~\ref{sec:theory}: below the imagery threshold the caption lever cannot engage and
-\method{} degrades toward chance, matching the sparse-imagery boundary condition.
+Prediction (b) of Sec.~\ref{sec:theory} concerns the sparse-imagery boundary: when per-identity
+imagery is too scarce for $I(T;Y)$ to be realised, the caption lever cannot engage, so the theory
+predicts that \method{} should degrade toward chance regardless of what the caption says. Tracing
+enrolment against $n_{\text{img}}$ to measure this predicted boundary directly is left to future work.
 
 \subsection{Limitations}
 \label{sec:limits}
