@@ -45,17 +45,32 @@ def _install_torchvision_stub() -> None:
         if _name == "torchvision" or _name.startswith("torchvision."):
             del sys.modules[_name]
 
+    class _Dummy:
+        """Permissive placeholder for any torchvision symbol (never actually used).
+
+        Supports arbitrary attribute access, calls, subscripting and iteration so
+        that ``transformers`` import-time expressions (e.g. building an
+        ``InterpolationMode`` lookup table) succeed. Distinct instances per access
+        keep dict keys/values from colliding.
+        """
+
+        def __getattr__(self, name):
+            return _Dummy()
+
+        def __call__(self, *args, **kwargs):
+            return _Dummy()
+
+        def __getitem__(self, key):
+            return _Dummy()
+
+        def __iter__(self):
+            return iter(())
+
     class _StubModule(types.ModuleType):
         __path__: list = []  # mark as a package so submodule imports resolve
 
         def __getattr__(self, name):
-            def _unavailable(*args, **kwargs):
-                raise RuntimeError(
-                    "torchvision is stubbed (broken install); "
-                    f"'{self.__name__}.{name}' is unavailable"
-                )
-            _unavailable.__name__ = name
-            return _unavailable
+            return _Dummy()
 
     class _StubFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
         def find_spec(self, name, path=None, target=None):
