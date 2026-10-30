@@ -18,6 +18,66 @@ import torch
 import torch.nn as nn
 
 
+def _install_torchvision_stub() -> None:
+    """Neutralise a broken torchvision so GPT-2 loading still works.
+
+    Recent ``transformers`` versions eagerly import torchvision (through their
+    object-detection loss utilities) the moment a causal LM is loaded. If the
+    environment's torchvision has broken compiled ops (a torch/torchvision ABI
+    mismatch, e.g. ``operator torchvision::nms does not exist``), that import
+    aborts GPT-2 loading even though the text-generation path never touches
+    torchvision. When (and only when) the real torchvision fails to import,
+    install a lazy stub so those unused imports resolve harmlessly.
+    """
+    import sys
+    import types
+    import importlib.abc
+    import importlib.machinery
+
+    try:
+        import torchvision  # noqa: F401
+        return  # healthy torchvision -> leave it alone
+    except Exception:
+        pass
+
+    # Drop any partially-initialised torchvision modules left by the failed import.
+    for _name in list(sys.modules):
+        if _name == "torchvision" or _name.startswith("torchvision."):
+            del sys.modules[_name]
+
+    class _StubModule(types.ModuleType):
+        __path__: list = []  # mark as a package so submodule imports resolve
+
+        def __getattr__(self, name):
+            def _unavailable(*args, **kwargs):
+                raise RuntimeError(
+                    "torchvision is stubbed (broken install); "
+                    f"'{self.__name__}.{name}' is unavailable"
+                )
+            _unavailable.__name__ = name
+            return _unavailable
+
+    class _StubFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
+        def find_spec(self, name, path=None, target=None):
+            if name == "torchvision" or name.startswith("torchvision."):
+                return importlib.machinery.ModuleSpec(name, self)
+            return None
+
+        def create_module(self, spec):
+            mod = _StubModule(spec.name)
+            mod.__path__ = []
+            mod.__version__ = "0.0.0+stub"
+            return mod
+
+        def exec_module(self, module):
+            pass
+
+    sys.meta_path.insert(0, _StubFinder())
+
+
+_install_torchvision_stub()
+
+
 @dataclass
 class GeneratorConfig:
     base_lm: str = "gpt2"
