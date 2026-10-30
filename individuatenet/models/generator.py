@@ -175,12 +175,22 @@ def save_generator(model: "IndividuateNet", path: str) -> None:
     os.replace(tmp, path)
 
 
+def _safe_device(device: str) -> str:
+    """Fall back to CPU when CUDA is requested but unavailable (old driver / CPU node)."""
+    if isinstance(device, str) and device.startswith("cuda") and not torch.cuda.is_available():
+        import warnings
+        warnings.warn(f"CUDA requested ('{device}') but unavailable -> using CPU")
+        return "cpu"
+    return device
+
+
 def load_generator(path: str, device: str = "cpu") -> "IndividuateNet":
     """Rebuild an IndividuateNet and load the trained context encoder weights.
 
     Reads only ``context`` + ``gen_cfg`` so it also accepts the richer training
     checkpoint (which additionally carries optimiser/step state).
     """
+    device = _safe_device(device)
     ckpt = torch.load(path, map_location=device)
     cfg = GeneratorConfig(**ckpt["gen_cfg"])
     model = IndividuateNet(cfg).to(device)
@@ -221,6 +231,7 @@ def generate_captions(
     import numpy as np
 
     model.eval()
+    device = _safe_device(device)
     bad_ids = _nsfw_bad_token_ids(model.tokenizer)
     ctx = torch.as_tensor(np.asarray(context, dtype="float32"), device=device)
     caps: list = []
