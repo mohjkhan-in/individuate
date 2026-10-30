@@ -18,35 +18,41 @@ import torch
 import torch.nn as nn
 
 
-def _install_torchvision_stub() -> None:
-    """Neutralise a broken torchvision so GPT-2 loading still works.
+def _stub_broken_torch_companions() -> None:
+    """Neutralise broken torch companion libs so GPT-2 loading still works.
 
-    Recent ``transformers`` versions eagerly import torchvision (through their
-    object-detection loss utilities) the moment a causal LM is loaded. If the
-    environment's torchvision has broken compiled ops (a torch/torchvision ABI
-    mismatch, e.g. ``operator torchvision::nms does not exist``), that import
-    aborts GPT-2 loading even though the text-generation path never touches
-    torchvision. When (and only when) the real torchvision fails to import,
-    install a lazy stub so those unused imports resolve harmlessly.
+    Recent ``transformers`` versions eagerly import torchvision and torchaudio
+    (via their object-detection loss / audio processing utilities) the moment a
+    causal LM is loaded. If those libs have broken compiled extensions (a
+    torch/torchvision/torchaudio ABI mismatch -- common with nightly torch,
+    e.g. ``operator torchvision::nms does not exist`` or
+    ``libtorchaudio.so: undefined symbol``), that import aborts GPT-2 loading
+    even though the text-generation path never touches them. For each installed
+    companion that fails to import, install a lazy stub so the unused imports
+    resolve harmlessly. Healthy libs are left completely untouched.
     """
     import sys
     import types
+    import importlib
     import importlib.abc
     import importlib.machinery
 
-    try:
-        import torchvision  # noqa: F401
-        return  # healthy torchvision -> leave it alone
-    except Exception:
-        pass
-
-    # Drop any partially-initialised torchvision modules left by the failed import.
-    for _name in list(sys.modules):
-        if _name == "torchvision" or _name.startswith("torchvision."):
-            del sys.modules[_name]
+    broken: set = set()
+    for _lib in ("torchvision", "torchaudio"):
+        try:
+            importlib.import_module(_lib)
+        except ModuleNotFoundError:
+            continue  # genuinely not installed -> let transformers' guards handle it
+        except Exception:
+            broken.add(_lib)
+            for _name in list(sys.modules):  # drop partial modules
+                if _name == _lib or _name.startswith(_lib + "."):
+                    del sys.modules[_name]
+    if not broken:
+        return
 
     class _Dummy:
-        """Permissive placeholder for any torchvision symbol (never actually used).
+        """Permissive placeholder for any stubbed symbol (never actually used).
 
         Supports arbitrary attribute access, calls, subscripting and iteration so
         that ``transformers`` import-time expressions (e.g. building an
@@ -74,7 +80,7 @@ def _install_torchvision_stub() -> None:
 
     class _StubFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
         def find_spec(self, name, path=None, target=None):
-            if name == "torchvision" or name.startswith("torchvision."):
+            if name.split(".")[0] in broken:
                 return importlib.machinery.ModuleSpec(name, self)
             return None
 
@@ -90,7 +96,7 @@ def _install_torchvision_stub() -> None:
     sys.meta_path.insert(0, _StubFinder())
 
 
-_install_torchvision_stub()
+_stub_broken_torch_companions()
 
 
 @dataclass
