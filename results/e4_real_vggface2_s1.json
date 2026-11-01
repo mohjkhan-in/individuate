@@ -1,0 +1,45 @@
+{
+  "dataset": "vggface2",
+  "seed": 1,
+  "tau": 2,
+  "n_attr_keys": 21,
+  "cohort_mean": 52.62,
+  "points": {
+    "attribute": {
+      "auc": 0.75927084959123,
+      "eer": 0.3209057971014493,
+      "auc_collision": 0.5980101038895224,
+      "eer_collision": 0.42000411757253264,
+      "auc_drop": 0.16126074570170768,
+      "n_impostor": 358800,
+      "n_impostor_collision": 63144
+    },
+    "discriminative": {
+      "auc": 0.7254656575157934,
+      "eer": 0.3433221850613155,
+      "auc_collision": 0.6439975360551543,
+      "eer_collision": 0.38498859749144815,
+      "auc_drop": 0.08146812146063909,
+      "n_impostor": 358800,
+      "n_impostor_collision": 63144
+    },
+    "rich": {
+      "auc": 0.7879566425120773,
+      "eer": 0.2883026755852843,
+      "auc_collision": 0.6496885821825246,
+      "eer_collision": 0.39603525275560625,
+      "auc_drop": 0.13826806032955274,
+      "n_impostor": 358800,
+      "n_impostor_collision": 63144
+    },
+    "generated": {
+      "auc": 0.8621798599498328,
+      "eer": 0.211832497212932,
+      "auc_collision": 0.7380578716901052,
+      "eer_collision": 0.3216799695933105,
+      "auc_drop": 0.12412198825972764,
+      "n_impostor": 358800,
+      "n_impostor_collision": 63144
+    }
+  }
+}
