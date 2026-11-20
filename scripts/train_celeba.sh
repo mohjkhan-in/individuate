@@ -57,21 +57,32 @@ ln -sfn "$SRC_CELEBA" "$REPO/data_local/celeba"
 # Staging succeeded -> queue the follower NOW so it resumes if THIS job is killed
 # at wall-time. It re-checks the DONE marker at the top and exits early if done.
 if [ -n "${SLURM_JOB_ID:-}" ]; then
-  sbatch --dependency=afterany:"$SLURM_JOB_ID" "$0" || true
+  if [ -n "${SBATCH_NODES:-}" ]; then
+    sbatch --nodelist="$SBATCH_NODES" --dependency=afterany:"$SLURM_JOB_ID" "$0" || true
+  else
+    sbatch --dependency=afterany:"$SLURM_JOB_ID" "$0" || true
+  fi
 fi
 
 cd "$REPO"
-# conda's activate/deactivate scripts reference unset vars (e.g. CONDA_BACKUP_CXX),
-# which are fatal under `set -u`; relax it just around activation.
-set +u
-# shellcheck disable=SC1090
-source ~/miniconda3/etc/profile.d/conda.sh 2>/dev/null || true
-conda activate torch310
-set -u
+# Prefer an explicit recovery environment when torch310 is broken.
+PYTHON_BIN="${PYTHON_BIN:-}"
+if [ -n "$PYTHON_BIN" ]; then
+  echo "[python] using recovery environment: $PYTHON_BIN"
+else
+  # conda's activate/deactivate scripts reference unset vars (e.g. CONDA_BACKUP_CXX),
+  # which are fatal under `set -u`; relax it just around activation.
+  set +u
+  # shellcheck disable=SC1090
+  source ~/miniconda3/etc/profile.d/conda.sh 2>/dev/null || true
+  conda activate torch310
+  set -u
+  PYTHON_BIN="$(command -v python)"
+fi
 export HF_HOME="$HOME/.cache/huggingface"
 export PYTHONUNBUFFERED=1   # stream [warmup]/[step] prints live into the .out
 
 # --- train (resumable); writes $CKPT_DIR/generator.pt + .done on completion ---
-python -u scripts/train_generator.py --config configs/celeba.yaml --out "$CKPT_DIR"
+"$PYTHON_BIN" -u scripts/train_generator.py --config configs/celeba.yaml --out "$CKPT_DIR"
 
 echo "[exit] job $SLURM_JOB_ID finished its slice"
