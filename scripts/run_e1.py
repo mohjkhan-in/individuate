@@ -165,7 +165,8 @@ def run_real(args) -> dict:
     if getattr(args, "rich_captions", None):
         rich_caps = json.loads(Path(args.rich_captions).read_text(encoding="utf-8"))
         n_hit = sum(
-            any(s.image_path in rich_caps for s in ctx_imgs[i]) for i in ids
+            any(Path(str(s.image_path)).name in rich_caps for s in ctx_imgs[i])
+            for i in ids
         )
         print(f"[rich] free-text VLM captions: {n_hit}/{len(ids)} identities covered "
               f"(rest fall back to attribute text)")
@@ -184,8 +185,9 @@ def run_real(args) -> dict:
                 free_text = None
                 if rich_caps is not None:
                     for s in ctx_imgs[i]:  # context images only -> no probe leakage
-                        if s.image_path in rich_caps:
-                            free_text = rich_caps[s.image_path]
+                        key = Path(str(s.image_path)).name
+                        if key in rich_caps:
+                            free_text = rich_caps[key]
                             break
                 cap = build_captions(modal, "rich", free_text=free_text)
             else:

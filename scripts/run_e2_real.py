@@ -156,8 +156,9 @@ def run(args) -> dict:
                 free_text = None
                 if rich_caps is not None:
                     for s in ctx_imgs[i]:
-                        if s.image_path in rich_caps:
-                            free_text = rich_caps[s.image_path]
+                        key = Path(str(s.image_path)).name
+                        if key in rich_caps:
+                            free_text = rich_caps[key]
                             break
                 cap = build_captions(modal, "rich", free_text=free_text)
             else:
