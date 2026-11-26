@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 import _bootstrap  # noqa: F401
@@ -144,6 +145,13 @@ def run(args) -> dict:
           f"mean {cohort_sizes.mean():.1f}, median {np.median(cohort_sizes):.0f}, "
           f"min {cohort_sizes.min()}, max {cohort_sizes.max()}")
 
+    checkpoint_path = Path(getattr(args, "checkpoint", None) or args.out)
+    resume = bool(getattr(args, "resume", True))
+    partial = (
+        _load_matching_checkpoint(checkpoint_path, cfg.data.name, seed, args.tau)
+        if resume else {}
+    )
+
     sources = ["attribute", "discriminative", "rich"]
     gen_caps = None
     if args.generator_ckpt:
@@ -163,8 +171,11 @@ def run(args) -> dict:
     if args.rich_captions:
         rich_caps = json.loads(Path(args.rich_captions).read_text(encoding="utf-8"))
 
-    points: dict = {}
+    points: dict = dict(partial.get("points", {}))
     for source in sources:
+        if source in points:
+            print(f"[resume] skipping completed source: {source}")
+            continue
         captions = []
         for i in ids:
             modal = enrol_attrs[i]
@@ -179,8 +190,9 @@ def run(args) -> dict:
                 free_text = None
                 if rich_caps is not None:
                     for s in ctx_imgs[i]:
-                        if s.image_path in rich_caps:
-                            free_text = rich_caps[s.image_path]
+                        key = Path(str(s.image_path)).name
+                        if key in rich_caps:
+                            free_text = rich_caps[key]
                             break
                 cap = build_captions(modal, "rich", free_text=free_text)
             else:
@@ -201,6 +213,16 @@ def run(args) -> dict:
         print(f"{source:>14}  AUC {auc_all:.3f} -> collision {auc_col:.3f} "
               f"(drop {auc_all - auc_col:+.3f})   EER {100*eer_all:.2f} -> "
               f"{100*eer_col:.2f}")
+        partial_payload = {
+            "dataset": cfg.data.name,
+            "seed": seed,
+            "tau": args.tau,
+            "n_attr_keys": len(attr_keys),
+            "cohort_mean": float(cohort_sizes.mean()),
+            "points": points,
+        }
+        _atomic_write_json(checkpoint_path, partial_payload)
+        print(f"[checkpoint] saved {source}: {checkpoint_path}")
 
     if encoders.offline:
         print("\n[warning] encoders ran OFFLINE (hashing fallback): numbers are "
@@ -211,6 +233,31 @@ def run(args) -> dict:
         "cohort_mean": float(cohort_sizes.mean()),
         "points": points,
     }
+
+
+def _atomic_write_json(path: Path, payload: dict) -> None:
+    """Atomically write a JSON checkpoint, avoiding partial files on interruption."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _load_matching_checkpoint(path: Path, dataset: str, seed: int,
+                              tau: int) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        print(f"[resume] ignoring unreadable checkpoint {path}: {exc}")
+        return {}
+    if (payload.get("dataset") != dataset
+            or int(payload.get("seed", -1)) != seed
+            or int(payload.get("tau", -1)) != tau):
+        print(f"[resume] checkpoint {path} belongs to a different run; ignoring")
+        return {}
+    return payload
 
 
 def main() -> None:
@@ -228,13 +275,20 @@ def main() -> None:
     ap.add_argument("--generator_ckpt", type=str, default=None)
     ap.add_argument("--rich_captions", type=str, default=None)
     ap.add_argument("--out", type=str, default="results/e4_real.json")
+    ap.add_argument("--checkpoint", type=str, default=None,
+                    help="partial state file (defaults to --out)")
+    resume_group = ap.add_mutually_exclusive_group()
+    resume_group.add_argument("--resume", dest="resume", action="store_true",
+                              help="resume from matching completed sources (default)")
+    resume_group.add_argument("--no-resume", dest="resume", action="store_false",
+                              help="ignore existing partial state")
+    ap.set_defaults(resume=True)
     args = ap.parse_args()
 
     print(f"\nE4 (real) -- attribute-collision ({args.config})\n")
     payload = run(args)
     out = Path(args.out)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    _atomic_write_json(out, payload)
     print(f"\nsaved -> {out}")
 
 
